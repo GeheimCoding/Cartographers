@@ -14,6 +14,38 @@ struct Grid {
 #[derive(Component)]
 struct PlayerMap;
 
+#[derive(Component)]
+struct Cell {
+    category: Category,
+    index: (usize, usize),
+}
+
+#[derive(Default)]
+enum Category {
+    Field,
+    Forest,
+    Monster,
+    Mountain,
+    Village,
+    Water,
+    #[default]
+    None,
+}
+
+impl Category {
+    fn get_file_path(&self) -> &str {
+        match self {
+            Category::Field => "textures/categories/field.png",
+            Category::Forest => "textures/categories/forest.png",
+            Category::Monster => "textures/categories/monster.png",
+            Category::Mountain => "textures/categories/mountain.png",
+            Category::Village => "textures/categories/village.png",
+            Category::Water => "textures/categories/water.png",
+            Category::None => "textures/categories/none.png",
+        }
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -52,7 +84,7 @@ fn setup(
     ));
 
     let dimension = (11, 11);
-    let cell_size = Vec2::new(37.1, 36.7);
+    let cell_size = Vec2::new(37.2, 36.7);
     let offset = Vec2::new(48.0, 145.0);
     let size = cell_size * Vec2::new(dimension.0 as f32, dimension.1 as f32);
 
@@ -70,6 +102,37 @@ fn setup(
             (offset + size / 2.0 - window.size() / 2.0).extend(1.0) * Vec3::new(1.0, -1.0, 1.0),
         ),
     ));
+
+    let mountains = vec![(1, 3), (2, 8), (5, 5), (8, 2), (9, 7)];
+
+    for row in 0..dimension.0 {
+        for column in 0..dimension.1 {
+            let index = (row, column);
+            let cell = Cell {
+                category: if mountains.contains(&index) {
+                    Category::Mountain
+                } else {
+                    Category::default()
+                },
+                index,
+            };
+            commands.spawn((
+                Sprite {
+                    image: asset_server.load(cell.category.get_file_path()),
+                    custom_size: Some(cell_size),
+                    ..default()
+                },
+                Transform::from_translation(
+                    (offset - window.size() / 2.0
+                        + cell_size / 2.0
+                        + cell_size * Vec2::new(index.1 as f32, index.0 as f32))
+                    .extend(1.0)
+                        * Vec3::new(1.0, -1.0, 1.0),
+                ),
+                cell,
+            ));
+        }
+    }
 }
 
 fn show_cell_selector(
