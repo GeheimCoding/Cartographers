@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy::sprite::SpriteImageMode::Scale;
+use bevy_framepace::FramepacePlugin;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
@@ -32,6 +33,12 @@ enum Category {
     None,
 }
 
+#[derive(Component)]
+struct RowSelector;
+
+#[derive(Component)]
+struct ColumnSelector;
+
 impl Category {
     fn get_file_path(&self) -> &str {
         match self {
@@ -48,17 +55,23 @@ impl Category {
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: String::from("Cartographers"),
+        .add_plugins((
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: String::from("Cartographers"),
+                    ..default()
+                }),
                 ..default()
             }),
-            ..default()
-        }))
+            FramepacePlugin,
+        ))
+        .insert_resource(SpritePickingSettings {
+            require_markers: false,
+            picking_mode: SpritePickingMode::BoundingBox,
+        })
         .add_plugins(EguiPlugin::default())
         .add_plugins(WorldInspectorPlugin::default())
         .add_systems(Startup, setup)
-        .add_systems(Update, show_cell_selector)
         .run();
 }
 
@@ -103,7 +116,29 @@ fn setup(
         ),
     ));
 
+    let row_size = Vec2::new(size.x, cell_size.y);
+    commands.spawn((
+        RowSelector,
+        Mesh2d(meshes.add(Rectangle::from_size(row_size))),
+        MeshMaterial2d(materials.add(Color::srgba(0.0, 0.0, 0.0, 0.2))),
+        Transform::from_translation(
+            (offset + row_size / 2.0 - window.size() / 2.0).extend(1.0) * Vec3::new(1.0, -1.0, 1.0),
+        ),
+    ));
+
+    let column_size = Vec2::new(cell_size.x, size.y);
+    commands.spawn((
+        ColumnSelector,
+        Mesh2d(meshes.add(Rectangle::from_size(column_size))),
+        MeshMaterial2d(materials.add(Color::srgba(0.0, 0.0, 0.0, 0.2))),
+        Transform::from_translation(
+            (offset + column_size / 2.0 - window.size() / 2.0).extend(1.0)
+                * Vec3::new(1.0, -1.0, 1.0),
+        ),
+    ));
+
     let mountains = vec![(1, 3), (2, 8), (5, 5), (8, 2), (9, 7)];
+    let mut observer = Observer::new(position_selectors);
 
     for row in 0..dimension.0 {
         for column in 0..dimension.1 {
@@ -116,40 +151,57 @@ fn setup(
                 },
                 index,
             };
-            commands.spawn((
+            let cell = commands.spawn((
                 Sprite {
                     image: asset_server.load(cell.category.get_file_path()),
                     custom_size: Some(cell_size),
                     ..default()
                 },
+                Pickable::default(),
                 Transform::from_translation(
                     (offset - window.size() / 2.0
                         + cell_size / 2.0
-                        + cell_size * Vec2::new(index.1 as f32, index.0 as f32))
+                        + cell_size * Vec2::new(column as f32, row as f32))
                     .extend(1.0)
                         * Vec3::new(1.0, -1.0, 1.0),
                 ),
                 cell,
             ));
+            observer.watch_entity(cell.id());
         }
     }
+    commands.spawn(observer);
 }
 
-fn show_cell_selector(
-    mut map: Single<&mut Sprite, With<PlayerMap>>,
-    window: Single<&Window>,
+fn position_selectors(
+    trigger: Trigger<Pointer<Over>>,
+    query: Query<&Cell>,
     grid: Res<Grid>,
+    window: Single<&Window>,
+    mut row_selector: Single<
+        (&mut Transform, &mut Visibility),
+        (With<RowSelector>, Without<ColumnSelector>),
+    >,
+    mut column_selector: Single<
+        (&mut Transform, &mut Visibility),
+        (With<ColumnSelector>, Without<RowSelector>),
+    >,
 ) {
-    let Some(position) = window.cursor_position() else {
-        return;
-    };
-    let rect = Rect::from_corners(
-        grid.offset,
-        grid.offset + grid.cell_size * Vec2::new(grid.dimension.0 as f32, grid.dimension.1 as f32),
+    let cell = query.get(trigger.target()).unwrap();
+    row_selector.0.translation = Vec3::new(
+        row_selector.0.translation.x,
+        (grid.offset.y + cell.index.0 as f32 * grid.cell_size.y - window.height() / 2.0
+            + grid.cell_size.y / 2.0)
+            * -1.0,
+        row_selector.0.translation.z,
     );
-    if rect.contains(position) {
-        map.color = Color::srgb(0.0, 1.0, 1.0);
-    } else {
-        map.color = Color::WHITE;
-    }
+    column_selector.0.translation = Vec3::new(
+        grid.offset.x + cell.index.1 as f32 * grid.cell_size.x - window.width() / 2.0
+            + grid.cell_size.x / 2.0,
+        column_selector.0.translation.y,
+        column_selector.0.translation.z,
+    );
+
+    *row_selector.1 = Visibility::Inherited;
+    *column_selector.1 = Visibility::Inherited;
 }
