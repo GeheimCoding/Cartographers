@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy::sprite::SpriteImageMode::Scale;
@@ -64,10 +66,15 @@ fn main() {
                 ..default()
             }),
             FramepacePlugin,
+            MeshPickingPlugin,
         ))
         .insert_resource(SpritePickingSettings {
             require_markers: false,
             picking_mode: SpritePickingMode::BoundingBox,
+        })
+        .insert_resource(MeshPickingSettings {
+            require_markers: false,
+            ray_cast_visibility: RayCastVisibility::Any,
         })
         .add_plugins(EguiPlugin::default())
         .add_plugins(WorldInspectorPlugin::default())
@@ -107,18 +114,38 @@ fn setup(
         offset,
     });
 
-    commands.spawn((
-        Visibility::Hidden,
-        Mesh2d(meshes.add(Rectangle::from_size(size))),
-        MeshMaterial2d(materials.add(Color::srgb(0.0, 1.0, 1.0))),
-        Transform::from_translation(
-            (offset + size / 2.0 - window.size() / 2.0).extend(1.0) * Vec3::new(1.0, -1.0, 1.0),
-        ),
-    ));
+    commands
+        .spawn((
+            Visibility::Hidden,
+            Pickable {
+                should_block_lower: false,
+                is_hoverable: true,
+            },
+            Mesh2d(meshes.add(Rectangle::from_size(size))),
+            Transform::from_translation(
+                (offset + size / 2.0 - window.size() / 2.0).extend(1.0) * Vec3::new(1.0, -1.0, 1.0),
+            ),
+        ))
+        .observe(
+            |_: Trigger<Pointer<Out>>,
+             mut row_selector: Single<
+                &mut Visibility,
+                (With<RowSelector>, Without<ColumnSelector>),
+            >,
+             mut column_selector: Single<
+                &mut Visibility,
+                (With<ColumnSelector>, Without<RowSelector>),
+            >| {
+                **row_selector = Visibility::Hidden;
+                **column_selector = Visibility::Hidden;
+            },
+        );
 
     let row_size = Vec2::new(size.x, cell_size.y);
     commands.spawn((
         RowSelector,
+        Pickable::IGNORE,
+        Visibility::Hidden,
         Mesh2d(meshes.add(Rectangle::from_size(row_size))),
         MeshMaterial2d(materials.add(Color::srgba(0.0, 0.0, 0.0, 0.2))),
         Transform::from_translation(
@@ -129,6 +156,8 @@ fn setup(
     let column_size = Vec2::new(cell_size.x, size.y);
     commands.spawn((
         ColumnSelector,
+        Pickable::IGNORE,
+        Visibility::Hidden,
         Mesh2d(meshes.add(Rectangle::from_size(column_size))),
         MeshMaterial2d(materials.add(Color::srgba(0.0, 0.0, 0.0, 0.2))),
         Transform::from_translation(
@@ -157,7 +186,10 @@ fn setup(
                     custom_size: Some(cell_size),
                     ..default()
                 },
-                Pickable::default(),
+                Pickable {
+                    should_block_lower: false,
+                    is_hoverable: true,
+                },
                 Transform::from_translation(
                     (offset - window.size() / 2.0
                         + cell_size / 2.0
