@@ -55,6 +55,25 @@ impl Category {
     }
 }
 
+#[derive(Component)]
+struct Deck(Vec<Entity>);
+
+#[derive(Component)]
+struct DiscardPile(Vec<Entity>);
+
+#[derive(Component)]
+struct Card;
+
+#[derive(Resource)]
+struct CardBacks {
+    exploration: Handle<Image>,
+    season: Handle<Image>,
+    beach: Handle<Image>,
+    house: Handle<Image>,
+    shape: Handle<Image>,
+    tree: Handle<Image>,
+}
+
 fn main() {
     App::new()
         .add_plugins((
@@ -203,6 +222,29 @@ fn setup(
         }
     }
     commands.spawn(observer);
+
+    let mut cards = (1..=4)
+        .map(|i| format!("textures/cards/ambushes/card_{i:02}.png"))
+        .collect::<Vec<_>>();
+    cards.extend((5..=17).map(|i| format!("textures/cards/explorations/card_{i:02}.png")));
+
+    let mut exploration_cards = Vec::new();
+    for card in cards {
+        let exploration_card = commands.spawn((Card, Sprite::from_image(asset_server.load(card))));
+        exploration_cards.push(exploration_card.id());
+    }
+
+    commands.spawn(Deck(exploration_cards));
+    commands.spawn(DiscardPile(Vec::new()));
+
+    commands.insert_resource(CardBacks {
+        exploration: asset_server.load("textures/cards/explorations/back_exploration.png"),
+        season: asset_server.load("textures/cards/seasons/back_season.png"),
+        beach: asset_server.load("textures/cards/tasks/beaches/back_beach.png"),
+        house: asset_server.load("textures/cards/tasks/houses/back_house.png"),
+        shape: asset_server.load("textures/cards/tasks/shapes/back_shape.png"),
+        tree: asset_server.load("textures/cards/tasks/trees/back_tree.png"),
+    });
 }
 
 fn position_selectors(
