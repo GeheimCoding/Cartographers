@@ -1,11 +1,14 @@
 #![allow(dead_code)]
 
+use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy::sprite::SpriteImageMode::Scale;
 use bevy_framepace::FramepacePlugin;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use rand::seq::SliceRandom;
+use rand::{Rng, rng};
 
 #[derive(Resource)]
 struct Grid {
@@ -74,6 +77,12 @@ struct CardBacks {
     tree: Handle<Image>,
 }
 
+#[derive(Component)]
+struct Scroll;
+
+#[derive(Component)]
+struct Task;
+
 fn main() {
     App::new()
         .add_plugins((
@@ -97,7 +106,11 @@ fn main() {
         })
         .add_plugins(EguiPlugin::default())
         .add_plugins(WorldInspectorPlugin::default())
-        .add_systems(Startup, setup)
+        .add_systems(Startup, (setup, spawn_random_tasks))
+        .add_systems(
+            Update,
+            spawn_random_tasks.run_if(input_just_pressed(KeyCode::Enter)),
+        )
         .run();
 }
 
@@ -230,7 +243,11 @@ fn setup(
 
     let mut exploration_cards = Vec::new();
     for card in cards {
-        let exploration_card = commands.spawn((Card, Sprite::from_image(asset_server.load(card))));
+        let exploration_card = commands.spawn((
+            Card,
+            Sprite::from_image(asset_server.load(card)),
+            Visibility::Hidden,
+        ));
         exploration_cards.push(exploration_card.id());
     }
 
@@ -245,6 +262,21 @@ fn setup(
         shape: asset_server.load("textures/cards/tasks/shapes/back_shape.png"),
         tree: asset_server.load("textures/cards/tasks/trees/back_tree.png"),
     });
+
+    (22..=25)
+        .map(|i| format!("textures/cards/scrolls/card_{i:02}.png"))
+        .enumerate()
+        .for_each(|(index, scroll)| {
+            commands.spawn((
+                Scroll,
+                Sprite {
+                    image: asset_server.load(scroll),
+                    custom_size: Some(Vec2::new(150.0, 200.0)),
+                    ..default()
+                },
+                Transform::from_translation(Vec3::new(index as f32 * 180.0 - 270.0, 115.0, 2.0)),
+            ));
+        });
 }
 
 fn position_selectors(
@@ -278,4 +310,44 @@ fn position_selectors(
 
     *row_selector.1 = Visibility::Inherited;
     *column_selector.1 = Visibility::Inherited;
+}
+
+fn spawn_random_tasks(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    tasks: Query<Entity, With<Task>>,
+) {
+    for task in tasks.iter() {
+        commands.entity(task).despawn();
+    }
+    let random_tree = format!(
+        "textures/cards/tasks/trees/card_{:02}.png",
+        rng().random_range(26..=29)
+    );
+    let random_beach = format!(
+        "textures/cards/tasks/beaches/card_{:02}.png",
+        rng().random_range(30..=33)
+    );
+    let random_house = format!(
+        "textures/cards/tasks/houses/card_{:02}.png",
+        rng().random_range(34..=37)
+    );
+    let random_shape = format!(
+        "textures/cards/tasks/shapes/card_{:02}.png",
+        rng().random_range(38..=41)
+    );
+    let mut random_tasks = vec![random_tree, random_beach, random_house, random_shape];
+    random_tasks.shuffle(&mut rng());
+
+    random_tasks.iter().enumerate().for_each(|(index, task)| {
+        commands.spawn((
+            Task,
+            Sprite {
+                image: asset_server.load(task),
+                custom_size: Some(Vec2::new(150.0, 200.0)),
+                ..default()
+            },
+            Transform::from_translation(Vec3::new(index as f32 * 180.0 - 270.0, -115.0, 2.0)),
+        ));
+    });
 }
