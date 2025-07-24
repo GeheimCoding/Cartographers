@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
@@ -62,10 +63,19 @@ impl Category {
 struct Deck(Vec<Entity>);
 
 #[derive(Component)]
+struct TopOfDeck;
+
+#[derive(Component)]
 struct DiscardPile(Vec<Entity>);
 
 #[derive(Component)]
+struct BottomOfDiscardPile;
+
+#[derive(Component)]
 struct Card;
+
+#[derive(Component)]
+struct DrawnCard(Entity);
 
 #[derive(Resource)]
 struct CardBacks {
@@ -109,7 +119,10 @@ fn main() {
         .add_systems(Startup, (setup, spawn_random_tasks))
         .add_systems(
             Update,
-            spawn_random_tasks.run_if(input_just_pressed(KeyCode::Enter)),
+            (
+                spawn_random_tasks.run_if(input_just_pressed(KeyCode::Enter)),
+                draw_card.run_if(input_just_pressed(KeyCode::Space)),
+            ),
         )
         .run();
 }
@@ -241,27 +254,62 @@ fn setup(
         .collect::<Vec<_>>();
     cards.extend((5..=17).map(|i| format!("textures/cards/explorations/card_{i:02}.png")));
 
-    let mut exploration_cards = Vec::new();
-    for card in cards {
-        let exploration_card = commands.spawn((
-            Card,
-            Sprite::from_image(asset_server.load(card)),
-            Visibility::Hidden,
-        ));
-        exploration_cards.push(exploration_card.id());
-    }
-
-    commands.spawn(Deck(exploration_cards));
-    commands.spawn(DiscardPile(Vec::new()));
-
-    commands.insert_resource(CardBacks {
+    let card_backs = CardBacks {
         exploration: asset_server.load("textures/cards/explorations/back_exploration.png"),
         season: asset_server.load("textures/cards/seasons/back_season.png"),
         beach: asset_server.load("textures/cards/tasks/beaches/back_beach.png"),
         house: asset_server.load("textures/cards/tasks/houses/back_house.png"),
         shape: asset_server.load("textures/cards/tasks/shapes/back_shape.png"),
         tree: asset_server.load("textures/cards/tasks/trees/back_tree.png"),
-    });
+    };
+
+    let mut exploration_cards = Vec::new();
+    let deck_position = Vec3::new(540.0, 240.0, 2.0);
+    cards.shuffle(&mut rng());
+    for card in cards.iter().skip(1) {
+        let exploration_card = commands.spawn((
+            Card,
+            Sprite {
+                image: asset_server.load(card),
+                custom_size: Some(Vec2::new(150.0, 200.0)),
+                ..default()
+            },
+            Transform::from_translation(deck_position),
+        ));
+        exploration_cards.push(exploration_card.id());
+    }
+    commands.spawn((
+        TopOfDeck,
+        Sprite {
+            image: card_backs.exploration.clone(),
+            custom_size: Some(Vec2::new(150.0, 200.0)),
+            ..default()
+        },
+        Transform::from_translation(deck_position.with_z(3.0)),
+    ));
+    commands.spawn((
+        BottomOfDiscardPile,
+        Sprite {
+            image: card_backs.exploration.clone(),
+            custom_size: Some(Vec2::new(150.0, 200.0)),
+            color: Color::srgba(1.0, 1.0, 1.0, 0.2),
+            ..default()
+        },
+        Transform::from_translation(deck_position.with_z(1.0).with_x(deck_position.x - 180.0)),
+    ));
+
+    let drawn_card = commands
+        .spawn((
+            Card,
+            Sprite::from_image(asset_server.load(cards.first().expect("cards"))),
+        ))
+        .id();
+    commands.spawn(DrawnCard(drawn_card));
+
+    commands.spawn(Deck(exploration_cards));
+    commands.spawn(DiscardPile(Vec::new()));
+
+    commands.insert_resource(card_backs);
 
     (22..=25)
         .map(|i| format!("textures/cards/scrolls/card_{i:02}.png"))
@@ -271,10 +319,10 @@ fn setup(
                 Scroll,
                 Sprite {
                     image: asset_server.load(scroll),
-                    custom_size: Some(Vec2::new(150.0, 200.0)),
+                    custom_size: Some(Vec2::new(100.0, 133.3)),
                     ..default()
                 },
-                Transform::from_translation(Vec3::new(index as f32 * 180.0 - 270.0, 115.0, 2.0)),
+                Transform::from_translation(Vec3::new(index as f32 * 110.0 + 240.0, -130.0, 2.0)),
             ));
         });
 }
@@ -344,10 +392,55 @@ fn spawn_random_tasks(
             Task,
             Sprite {
                 image: asset_server.load(task),
-                custom_size: Some(Vec2::new(150.0, 200.0)),
+                custom_size: Some(Vec2::new(100.0, 133.3)),
                 ..default()
             },
-            Transform::from_translation(Vec3::new(index as f32 * 180.0 - 270.0, -115.0, 2.0)),
+            Transform::from_translation(Vec3::new(index as f32 * 110.0 + 240.0, -270.0, 2.0)),
         ));
     });
+}
+
+fn draw_card(
+    mut deck: Single<&mut Deck>,
+    mut discard_pile: Single<&mut DiscardPile>,
+    mut drawn_card: Single<&mut DrawnCard>,
+    mut cards: Query<(&mut Transform, &mut Sprite), With<Card>>,
+    mut visibility: Query<&mut Visibility, (With<Card>, Without<TopOfDeck>)>,
+    mut top_of_deck: Single<&mut Visibility, (With<TopOfDeck>, Without<Card>)>,
+) {
+    let deck = &mut deck.0;
+    if deck.is_empty() {
+        *visibility
+            .get_mut(*discard_pile.0.last().expect("cards"))
+            .expect("visibility") = Visibility::Hidden;
+        deck.extend(discard_pile.0.drain(..));
+        deck.shuffle(&mut rng());
+        info!("shuffled");
+        **top_of_deck = Visibility::Inherited;
+        return;
+    }
+    discard_pile.0.push(drawn_card.0);
+    drawn_card.0 = deck.pop_front().expect("at least one card left in deck");
+
+    if discard_pile.0.len() > 1 {
+        *visibility
+            .get_mut(discard_pile.0[discard_pile.0.len() - 2])
+            .expect("visibility") = Visibility::Hidden;
+    }
+    {
+        let (mut discard_position, mut discard_sprite) = cards
+            .get_mut(*discard_pile.0.last().expect("one card"))
+            .expect("card");
+        discard_sprite.custom_size = Some(Vec2::new(150.0, 200.0));
+        discard_position.translation = Vec3::new(540.0 - 180.0, 240.0, 2.0);
+    }
+
+    let (mut drawn_position, mut drawn_sprite) = cards.get_mut(drawn_card.0).expect("card");
+    drawn_sprite.custom_size = None;
+    drawn_position.translation = Vec3::splat(0.0);
+    *visibility.get_mut(drawn_card.0).expect("card") = Visibility::Inherited;
+
+    if deck.is_empty() {
+        **top_of_deck = Visibility::Hidden;
+    }
 }
