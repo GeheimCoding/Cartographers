@@ -27,7 +27,7 @@ struct Cell {
     index: (usize, usize),
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 enum Category {
     Field,
     Forest,
@@ -77,6 +77,16 @@ struct Card;
 #[derive(Component)]
 struct DrawnCard(Entity);
 
+#[derive(Component, Debug)]
+struct Choices(Vec<Choice>);
+
+#[derive(Debug)]
+struct Choice {
+    categories: Vec<Category>,
+    tiles: Vec<(usize, usize)>,
+    with_coin: bool,
+}
+
 #[derive(Resource)]
 struct CardBacks {
     exploration: Handle<Image>,
@@ -122,6 +132,7 @@ fn main() {
             (
                 spawn_random_tasks.run_if(input_just_pressed(KeyCode::Enter)),
                 draw_card.run_if(input_just_pressed(KeyCode::Space)),
+                create_choices,
             ),
         )
         .run();
@@ -267,7 +278,7 @@ fn setup(
     let deck_position = Vec3::new(540.0, 240.0, 2.0);
     cards.shuffle(&mut rng());
     for card in cards.iter().skip(1) {
-        let exploration_card = commands.spawn((
+        let mut exploration_card = commands.spawn((
             Card,
             Sprite {
                 image: asset_server.load(card),
@@ -276,6 +287,7 @@ fn setup(
             },
             Transform::from_translation(deck_position),
         ));
+        generate_choices(card).map(|choices| exploration_card.insert(choices));
         exploration_cards.push(exploration_card.id());
     }
     commands.spawn((
@@ -298,12 +310,10 @@ fn setup(
         Transform::from_translation(deck_position.with_z(1.0).with_x(deck_position.x - 180.0)),
     ));
 
-    let drawn_card = commands
-        .spawn((
-            Card,
-            Sprite::from_image(asset_server.load(cards.first().expect("cards"))),
-        ))
-        .id();
+    let first_card = cards.first().expect("cards");
+    let mut drawn_card = commands.spawn((Card, Sprite::from_image(asset_server.load(first_card))));
+    generate_choices(first_card).map(|choices| drawn_card.insert(choices));
+    let drawn_card = drawn_card.id();
     commands.spawn(DrawnCard(drawn_card));
 
     commands.spawn(Deck(exploration_cards));
@@ -443,4 +453,40 @@ fn draw_card(
     if deck.is_empty() {
         **top_of_deck = Visibility::Hidden;
     }
+}
+
+fn generate_choices(card: &str) -> Option<Choices> {
+    match card.split("/").last().expect("path") {
+        "card_01.png" => Some(Choices(vec![Choice {
+            categories: vec![Category::Monster],
+            tiles: vec![(2, 0), (1, 1), (0, 2)],
+            with_coin: false,
+        }])),
+        "card_02.png" => Some(Choices(vec![Choice {
+            categories: vec![Category::Monster],
+            tiles: vec![(0, 0), (1, 0), (0, 2), (1, 2)],
+            with_coin: false,
+        }])),
+        "card_03.png" => Some(Choices(vec![Choice {
+            categories: vec![Category::Monster],
+            tiles: vec![(0, 0), (1, 0), (2, 0), (1, 1)],
+            with_coin: false,
+        }])),
+        "card_04.png" => Some(Choices(vec![Choice {
+            categories: vec![Category::Monster],
+            tiles: vec![(0, 0), (1, 0), (2, 0), (0, 1), (2, 1)],
+            with_coin: false,
+        }])),
+        _ => None,
+    }
+}
+
+fn create_choices(drawn_card: Single<Ref<DrawnCard>>, choices: Query<&Choices>) {
+    if !drawn_card.is_changed() {
+        return;
+    }
+    let Ok(choices) = choices.get(drawn_card.0) else {
+        return;
+    };
+    info!("choices {:?}", choices);
 }
