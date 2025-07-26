@@ -477,6 +477,95 @@ fn generate_choices(card: &str) -> Option<Choices> {
             tiles: vec![(0, 0), (1, 0), (2, 0), (0, 1), (2, 1)],
             with_coin: false,
         }])),
+        "card_07.png" => Some(Choices(vec![
+            Choice {
+                categories: vec![Category::Water],
+                tiles: vec![(0, 0), (1, 0), (2, 0)],
+                with_coin: true,
+            },
+            Choice {
+                categories: vec![Category::Water],
+                tiles: vec![(0, 0), (0, 1), (1, 1), (1, 2), (2, 2)],
+                with_coin: false,
+            },
+        ])),
+        "card_08.png" => Some(Choices(vec![
+            Choice {
+                categories: vec![Category::Field],
+                tiles: vec![(0, 0), (1, 0)],
+                with_coin: true,
+            },
+            Choice {
+                categories: vec![Category::Field],
+                tiles: vec![(0, 1), (1, 0), (1, 1), (1, 2), (2, 1)],
+                with_coin: false,
+            },
+        ])),
+        "card_09.png" => Some(Choices(vec![
+            Choice {
+                categories: vec![Category::Village],
+                tiles: vec![(0, 0), (0, 1), (1, 0)],
+                with_coin: true,
+            },
+            Choice {
+                categories: vec![Category::Village],
+                tiles: vec![(0, 0), (0, 1), (1, 0), (1, 1), (1, 2)],
+                with_coin: false,
+            },
+        ])),
+        "card_10.png" => Some(Choices(vec![
+            Choice {
+                categories: vec![Category::Forest],
+                tiles: vec![(0, 1), (1, 0)],
+                with_coin: true,
+            },
+            Choice {
+                categories: vec![Category::Forest],
+                tiles: vec![(0, 1), (1, 0), (1, 1), (2, 0)],
+                with_coin: false,
+            },
+        ])),
+        "card_11.png" => Some(Choices(vec![Choice {
+            categories: vec![Category::Field, Category::Water],
+            tiles: vec![(0, 0), (1, 0), (2, 0), (2, 1), (2, 2)],
+            with_coin: false,
+        }])),
+        "card_12.png" => Some(Choices(vec![Choice {
+            categories: vec![Category::Village, Category::Field],
+            tiles: vec![(0, 0), (1, 0), (2, 0), (1, 1)],
+            with_coin: false,
+        }])),
+        "card_13.png" => Some(Choices(vec![Choice {
+            categories: vec![Category::Forest, Category::Field],
+            tiles: vec![(1, 0), (1, 1), (1, 2), (0, 2)],
+            with_coin: false,
+        }])),
+        "card_14.png" => Some(Choices(vec![Choice {
+            categories: vec![Category::Forest, Category::Village],
+            tiles: vec![(0, 0), (0, 1), (0, 2), (1, 2), (1, 3)],
+            with_coin: false,
+        }])),
+        "card_15.png" => Some(Choices(vec![Choice {
+            categories: vec![Category::Forest, Category::Water],
+            tiles: vec![(0, 0), (1, 0), (2, 0), (1, 1), (1, 2)],
+            with_coin: false,
+        }])),
+        "card_16.png" => Some(Choices(vec![Choice {
+            categories: vec![Category::Village, Category::Water],
+            tiles: vec![(0, 0), (0, 1), (0, 2), (0, 3)],
+            with_coin: false,
+        }])),
+        "card_17.png" => Some(Choices(vec![Choice {
+            categories: vec![
+                Category::Forest,
+                Category::Village,
+                Category::Field,
+                Category::Water,
+                Category::Monster,
+            ],
+            tiles: vec![(0, 0)],
+            with_coin: false,
+        }])),
         _ => None,
     }
 }
