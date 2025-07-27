@@ -1,8 +1,10 @@
 #![allow(dead_code)]
 
 use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
+use bevy::image::TextureFormatPixelInfo;
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
+use bevy::render::render_resource::Extent3d;
 use bevy::sprite::Anchor;
 use bevy::sprite::SpriteImageMode::Scale;
 use bevy_framepace::FramepacePlugin;
@@ -10,6 +12,7 @@ use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use rand::seq::SliceRandom;
 use rand::{Rng, rng};
+use std::collections::HashMap;
 
 #[derive(Resource)]
 struct Grid {
@@ -27,7 +30,7 @@ struct Cell {
     index: (usize, usize),
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 enum Category {
     Field,
     Forest,
@@ -103,6 +106,12 @@ struct Scroll;
 #[derive(Component)]
 struct Task;
 
+#[derive(Resource)]
+struct Categories(HashMap<Category, Handle<Image>>);
+
+#[derive(Component)]
+struct GeneratedSprite;
+
 fn main() {
     App::new()
         .add_plugins((
@@ -146,6 +155,20 @@ fn setup(
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     commands.spawn(Camera2d);
+
+    let categories = Categories(HashMap::from_iter(
+        [
+            Category::Field,
+            Category::Forest,
+            Category::Monster,
+            Category::Mountain,
+            Category::Village,
+            Category::Water,
+            Category::None,
+        ]
+        .iter()
+        .map(|c| (c.clone(), asset_server.load(c.get_file_path()))),
+    ));
 
     commands.spawn((
         PlayerMap,
@@ -238,7 +261,7 @@ fn setup(
             };
             let cell = commands.spawn((
                 Sprite {
-                    image: asset_server.load(cell.category.get_file_path()),
+                    image: categories.0[&cell.category].clone(),
                     custom_size: Some(cell_size),
                     ..default()
                 },
@@ -320,6 +343,7 @@ fn setup(
     commands.spawn(DiscardPile(Vec::new()));
 
     commands.insert_resource(card_backs);
+    commands.insert_resource(categories);
 
     (22..=25)
         .map(|i| format!("textures/cards/scrolls/card_{i:02}.png"))
@@ -570,12 +594,82 @@ fn generate_choices(card: &str) -> Option<Choices> {
     }
 }
 
-fn create_choices(drawn_card: Single<Ref<DrawnCard>>, choices: Query<&Choices>) {
+fn create_choices(
+    drawn_card: Single<Ref<DrawnCard>>,
+    choices: Query<&Choices>,
+    mut images: ResMut<Assets<Image>>,
+    categories: Res<Categories>,
+    mut commands: Commands,
+    generated: Query<Entity, With<GeneratedSprite>>,
+) {
     if !drawn_card.is_changed() {
         return;
     }
+
+    for generated in generated {
+        commands.entity(generated).despawn();
+    }
+
     let Ok(choices) = choices.get(drawn_card.0) else {
         return;
     };
-    info!("choices {:?}", choices);
+    let mut count = 0;
+    for choice in choices.0.iter() {
+        for category in choice.categories.iter() {
+            let Some(mut image) = images.get_mut(&categories.0[category]) else {
+                // TODO: proper asset loading first
+                return;
+            };
+            let created_image = create_choice_image(&mut image, choice.tiles.clone());
+            let handle = images.add(created_image);
+
+            commands.spawn((
+                GeneratedSprite,
+                Sprite::from_image(handle),
+                Transform::from_translation(Vec3::new(-512.0 + 250.0 * count as f32, -100.0, 3.0)),
+            ));
+            count += 1;
+        }
+    }
+}
+
+fn create_choice_image(image: &mut Image, tiles: Vec<(usize, usize)>) -> Image {
+    let size = image.texture_descriptor.size;
+    let format = image.texture_descriptor.format;
+    let width = tiles.iter().map(|(_, y)| *y + 1).max().unwrap() as u32 * size.width;
+    let height = tiles.iter().map(|(x, _)| *x + 1).max().unwrap() as u32 * size.height;
+
+    let mut choice_image = Image::new_fill(
+        Extent3d {
+            width,
+            height,
+            depth_or_array_layers: size.depth_or_array_layers,
+        },
+        image.texture_descriptor.dimension,
+        &[0, 0, 0, 0],
+        format,
+        image.asset_usage,
+    );
+    let pixel_size = format.pixel_size();
+    let data = image.data.as_mut().expect("image data should be present");
+    let choice_data = choice_image
+        .data
+        .as_mut()
+        .expect("image data should be present");
+    for (row, column) in tiles {
+        let row = (height / size.height) as usize - row - 1;
+        for h in 0..size.height as usize {
+            let start = h * size.width as usize * pixel_size;
+            let end = start + size.width as usize * pixel_size;
+
+            let choice_start = (row * width as usize * size.height as usize
+                + column * size.width as usize
+                + h * width as usize)
+                * pixel_size;
+            let choice_end = choice_start + size.width as usize * pixel_size;
+
+            choice_data[choice_start..choice_end].copy_from_slice(&data[start..end]);
+        }
+    }
+    choice_image
 }
