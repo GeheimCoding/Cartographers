@@ -1,5 +1,10 @@
 #![allow(dead_code)]
 
+mod asset_manager;
+mod cards;
+mod deck;
+mod terrain;
+
 use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
 use bevy::image::TextureFormatPixelInfo;
 use bevy::input::common_conditions::input_just_pressed;
