@@ -6,14 +6,15 @@ use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
 pub fn plugin(app: &mut App) {
-    app.add_event::<TerrainTexturesLoaded>()
+    app.add_event::<TerrainImagesLoaded>()
         .add_systems(Startup, load_assets)
         .add_systems(
             PreUpdate,
             (
-                track_resource::<TerrainTextures>
-                    .run_if(resource_exists::<ResourceTracker<TerrainTextures>>),
-                generate_choices.run_if(on_event::<TerrainTexturesLoaded>),
+                track_resource::<TerrainImages>
+                    .run_if(resource_exists::<ResourceTracker<TerrainImages>>),
+                track_resource::<Choices>.run_if(resource_exists::<ResourceTracker<Choices>>),
+                generate_choices.run_if(on_event::<TerrainImagesLoaded>),
             ),
         );
 }
@@ -29,7 +30,7 @@ pub struct CardBacks {
 }
 
 #[derive(Debug, Deref, Resource)]
-pub struct TerrainTextures(pub HashMap<Terrain, Handle<Image>>);
+pub struct TerrainImages(pub HashMap<Terrain, Handle<Image>>);
 
 #[derive(Debug, Deref, Resource)]
 pub struct Choices(HashMap<DrawableCard, Vec<Choice>>);
@@ -43,8 +44,9 @@ trait TrackableResource: Resource {
 #[derive(Resource)]
 struct ResourceTracker<T: TrackableResource>(PhantomData<T>);
 
+// TODO: refactor with one-shot systems?
 #[derive(Event)]
-struct TerrainTexturesLoaded;
+struct TerrainImagesLoaded;
 
 fn load_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.insert_resource(CardBacks {
@@ -57,13 +59,13 @@ fn load_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
     });
 
     commands
-        .insert_resource(TerrainTextures(HashMap::from_iter(Terrain::iter().map(
+        .insert_resource(TerrainImages(HashMap::from_iter(Terrain::iter().map(
             |terrain| (terrain.clone(), asset_server.load(terrain.get_file_path())),
         ))));
-    commands.insert_resource(ResourceTracker::<TerrainTextures>(PhantomData));
+    commands.insert_resource(ResourceTracker::<TerrainImages>(PhantomData));
 }
 
-impl TrackableResource for TerrainTextures {
+impl TrackableResource for TerrainImages {
     fn get_handles(&self) -> Vec<UntypedHandle> {
         self.0
             .values()
@@ -72,7 +74,21 @@ impl TrackableResource for TerrainTextures {
     }
 
     fn on_fully_loaded(&self, commands: &mut Commands) {
-        commands.send_event(TerrainTexturesLoaded);
+        commands.send_event(TerrainImagesLoaded);
+    }
+}
+
+impl TrackableResource for Choices {
+    fn get_handles(&self) -> Vec<UntypedHandle> {
+        self.0
+            .values()
+            .flat_map(|choices| choices.iter().map(|choice| choice.image.clone().untyped()))
+            .collect()
+    }
+
+    fn on_fully_loaded(&self, _commands: &mut Commands) {
+        // TODO: add states and switch to running state at this point
+        info!("Generated all choices!");
     }
 }
 
@@ -95,7 +111,7 @@ fn generate_choices(
     mut commands: Commands,
     images: Res<Assets<Image>>,
     asset_server: Res<AssetServer>,
-    terrain_textures: Res<TerrainTextures>,
+    terrain_images: Res<TerrainImages>,
 ) {
     commands.insert_resource(Choices(HashMap::from_iter(
         Ambush::iter()
@@ -104,8 +120,9 @@ fn generate_choices(
             .map(|drawable_card| {
                 (
                     drawable_card.clone(),
-                    drawable_card.generate_choices(&images, &asset_server, &terrain_textures),
+                    drawable_card.generate_choices(&images, &asset_server, &terrain_images),
                 )
             }),
     )));
+    commands.insert_resource(ResourceTracker::<Choices>(PhantomData));
 }

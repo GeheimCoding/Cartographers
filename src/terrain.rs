@@ -16,7 +16,7 @@ pub enum Terrain {
 #[derive(Clone, Debug)]
 pub struct Choice {
     pub terrain: Terrain,
-    pub texture: Handle<Image>,
+    pub image: Handle<Image>,
     pub tiles: Vec<(usize, usize)>,
     pub with_coin: bool,
 }

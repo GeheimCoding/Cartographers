@@ -1,6 +1,8 @@
-use crate::asset_manager::TerrainTextures;
+use crate::asset_manager::TerrainImages;
 use crate::terrain::{Choice, Terrain};
+use bevy::image::TextureFormatPixelInfo;
 use bevy::prelude::*;
+use bevy::render::render_resource::Extent3d;
 use strum::EnumIter;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -75,7 +77,7 @@ impl DrawableCard {
         &self,
         images: &Assets<Image>,
         asset_server: &AssetServer,
-        terrain_textures: &TerrainTextures,
+        terrain_images: &TerrainImages,
     ) -> Vec<Choice> {
         use Terrain::*;
         #[derive(Default)]
@@ -165,12 +167,12 @@ impl DrawableCard {
         let mut choices = Vec::new();
         for (tiles, with_coin) in permutation.tiles {
             for terrain in permutation.terrains.iter() {
-                let base_texture = images.get(&terrain_textures[terrain]).expect(&format!(
-                    "texture for {terrain:?} should have been full loaded at this point"
+                let terrain_image = images.get(&terrain_images[terrain]).expect(&format!(
+                    "image for {terrain:?} should have been full loaded at this point"
                 ));
                 choices.push(Choice {
                     terrain: terrain.clone(),
-                    texture: asset_server.add(Self::generate_choice_texture(&tiles, base_texture)),
+                    image: asset_server.add(generate_choice_image(&tiles, terrain_image)),
                     tiles: tiles.clone(),
                     with_coin,
                 });
@@ -178,8 +180,52 @@ impl DrawableCard {
         }
         choices
     }
+}
 
-    fn generate_choice_texture(tiles: &[(usize, usize)], base_texture: &Image) -> Image {
-        todo!("get inspired by create_choice_image from main.rs")
+fn generate_choice_image(tiles: &[(usize, usize)], terrain_image: &Image) -> Image {
+    let terrain_size = terrain_image.texture_descriptor.size;
+    let (terrain_width, terrain_height) =
+        (terrain_size.width as usize, terrain_size.height as usize);
+    let total_width = tiles.iter().map(|(_, y)| y + 1).max().expect("tiles") * terrain_width;
+    let total_height = tiles.iter().map(|(x, _)| x + 1).max().expect("tiles") * terrain_height;
+
+    let format = terrain_image.texture_descriptor.format;
+    let mut choice_image = Image::new_fill(
+        Extent3d {
+            width: total_width as u32,
+            height: total_height as u32,
+            ..terrain_size
+        },
+        terrain_image.texture_descriptor.dimension,
+        &[0, 0, 0, 0],
+        format,
+        terrain_image.asset_usage,
+    );
+    let terrain_data = terrain_image
+        .data
+        .as_ref()
+        .expect("terrain_image data should be present");
+    let choice_data = choice_image
+        .data
+        .as_mut()
+        .expect("choice_image data should be present");
+
+    let pixel_size = format.pixel_size();
+    let terrain_row_length = terrain_width * pixel_size;
+
+    for (choice_row, choice_column) in tiles {
+        let choice_row = (total_height / terrain_height) - choice_row - 1;
+        for terrain_row in 0..terrain_height {
+            let terrain_row_start = terrain_row * terrain_row_length;
+            let choice_row_start = (choice_row * total_width * terrain_height
+                + choice_column * terrain_width
+                + terrain_row * total_width)
+                * pixel_size;
+
+            choice_data[choice_row_start..choice_row_start + terrain_row_length].copy_from_slice(
+                &terrain_data[terrain_row_start..terrain_row_start + terrain_row_length],
+            );
+        }
     }
+    choice_image
 }
