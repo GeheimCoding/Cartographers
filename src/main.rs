@@ -129,6 +129,7 @@ fn main() {
             }),
             FramepacePlugin,
             MeshPickingPlugin,
+            asset_manager::plugin,
         ))
         .insert_resource(SpritePickingSettings {
             require_markers: false,
