@@ -1,20 +1,13 @@
 use crate::cards::{Ambush, Card, DrawableCard, Exploration};
+use crate::resource_tracking::{ResourceTracking, TrackableResource};
 use crate::terrain::{Choice, Terrain};
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
 use std::collections::HashMap;
-use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(Startup, load_assets).add_systems(
-        PreUpdate,
-        (
-            track_resource::<TerrainImages>
-                .run_if(resource_exists::<ResourceTracker<TerrainImages>>),
-            track_resource::<Choices>.run_if(resource_exists::<ResourceTracker<Choices>>),
-        ),
-    );
+    app.add_systems(Startup, load_assets);
 }
 
 #[derive(Deref, Resource)]
@@ -35,23 +28,6 @@ pub struct TerrainImages(pub HashMap<Terrain, Handle<Image>>);
 
 #[derive(Debug, Deref, Resource)]
 pub struct Choices(HashMap<DrawableCard, Vec<Choice>>);
-
-struct NoOpCommand;
-
-impl Command for NoOpCommand {
-    fn apply(self, _world: &mut World) {}
-}
-
-// TODO: extract resource tracking into it's own module?
-trait TrackableResource: Resource {
-    fn get_handles(&self) -> Vec<UntypedHandle>;
-    fn on_fully_loaded(&self) -> impl Command {
-        NoOpCommand
-    }
-}
-
-#[derive(Resource)]
-struct ResourceTracker<T: TrackableResource>(PhantomData<T>);
 
 #[derive(Resource)]
 struct PlayerMaps {
@@ -75,11 +51,10 @@ fn load_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
         tree: asset_server.load("textures/cards/scoring/trees/back_tree.png"),
     });
 
-    commands
-        .insert_resource(TerrainImages(HashMap::from_iter(Terrain::iter().map(
-            |terrain| (terrain.clone(), asset_server.load(terrain.get_file_path())),
-        ))));
-    commands.insert_resource(ResourceTracker::<TerrainImages>(PhantomData));
+    commands.insert_trackable_resource(TerrainImages(HashMap::from_iter(
+        Terrain::iter()
+            .map(|terrain| (terrain.clone(), asset_server.load(terrain.get_file_path()))),
+    )));
 
     commands.insert_resource(PlayerMaps {
         side_a: asset_server.load("textures/maps/map_a.png"),
@@ -88,45 +63,28 @@ fn load_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
 }
 
 impl TrackableResource for TerrainImages {
-    fn get_handles(&self) -> Vec<UntypedHandle> {
-        self.0
-            .values()
+    fn get_handles_to_track(&self) -> Vec<UntypedHandle> {
+        self.values()
             .map(|handle| handle.clone().untyped())
             .collect()
     }
 
-    fn on_fully_loaded(&self) -> impl Command {
+    fn on_tracked_handles_fully_loaded(&self) -> impl Command {
         |world: &mut World| world.run_system_once(generate_choices).expect("run once")
     }
 }
 
 impl TrackableResource for Choices {
-    fn get_handles(&self) -> Vec<UntypedHandle> {
-        self.0
-            .values()
+    fn get_handles_to_track(&self) -> Vec<UntypedHandle> {
+        self.values()
             .flat_map(|choices| choices.iter().map(|choice| choice.image.clone().untyped()))
             .collect()
     }
 
-    fn on_fully_loaded(&self) -> impl Command {
+    fn on_tracked_handles_fully_loaded(&self) -> impl Command {
         // TODO: add states and switch to running state at this point
         info!("Generated all choices!");
-        NoOpCommand
-    }
-}
-
-fn track_resource<T: TrackableResource>(
-    mut commands: Commands,
-    trackable_resource: Res<T>,
-    asset_server: Res<AssetServer>,
-) {
-    if trackable_resource
-        .get_handles()
-        .iter()
-        .all(|handle| asset_server.is_loaded_with_dependencies(handle))
-    {
-        commands.queue(trackable_resource.on_fully_loaded());
-        commands.remove_resource::<ResourceTracker<T>>();
+        |_world: &mut World| {}
     }
 }
 
@@ -136,7 +94,7 @@ fn generate_choices(
     asset_server: Res<AssetServer>,
     terrain_images: Res<TerrainImages>,
 ) {
-    commands.insert_resource(Choices(HashMap::from_iter(
+    commands.insert_trackable_resource(Choices(HashMap::from_iter(
         Ambush::iter()
             .map(|ambush| DrawableCard::Ambush(ambush))
             .chain(Exploration::iter().map(|exploration| DrawableCard::Exploration(exploration)))
@@ -147,5 +105,4 @@ fn generate_choices(
                 )
             }),
     )));
-    commands.insert_resource(ResourceTracker::<Choices>(PhantomData));
 }

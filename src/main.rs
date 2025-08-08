@@ -3,6 +3,7 @@
 mod asset_manager;
 mod cards;
 mod deck;
+mod resource_tracking;
 mod terrain;
 
 use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
@@ -129,6 +130,7 @@ fn main() {
             }),
             FramepacePlugin,
             MeshPickingPlugin,
+            resource_tracking::plugin,
             asset_manager::plugin,
         ))
         .insert_resource(SpritePickingSettings {
