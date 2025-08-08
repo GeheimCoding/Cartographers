@@ -3,12 +3,26 @@ use crate::terrain::{Choice, Terrain};
 use bevy::image::TextureFormatPixelInfo;
 use bevy::prelude::*;
 use bevy::render::render_resource::Extent3d;
-use strum::EnumIter;
+use strum::{EnumIter, IntoEnumIterator};
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Card {
+    DrawableCard(DrawableCard),
+    Season(Season),
+    Scroll(Scroll),
+    Scoring(Scoring),
+}
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum DrawableCard {
     Ambush(Ambush),
     Exploration(Exploration),
+}
+
+impl From<DrawableCard> for Card {
+    fn from(card: DrawableCard) -> Self {
+        Self::DrawableCard(card)
+    }
 }
 
 #[derive(Clone, Debug, EnumIter, Eq, Hash, PartialEq)]
@@ -36,7 +50,7 @@ pub enum Exploration {
     RiftLands17,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, EnumIter, Eq, Hash, PartialEq)]
 pub enum Season {
     Spring18,
     Summer19,
@@ -44,32 +58,85 @@ pub enum Season {
     Winter21,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, EnumIter, Eq, Hash, PartialEq)]
+pub enum Scroll {
+    ScrollA22,
+    ScrollB23,
+    ScrollC24,
+    ScrollD25,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Scoring {
+    Tree(TreeScoring),
+    Farm(FarmScoring),
+    House(HouseScoring),
+    Shape(ShapeScoring),
+}
+
+impl From<Scoring> for Card {
+    fn from(scoring: Scoring) -> Self {
+        Self::Scoring(scoring)
+    }
+}
+
+#[derive(Clone, Debug, EnumIter, Eq, Hash, PartialEq)]
+pub enum TreeScoring {
     SentinelWood26,
     Greenbough27,
     Treetower28,
     StonesideForest29,
+}
+
+#[derive(Clone, Debug, EnumIter, Eq, Hash, PartialEq)]
+pub enum FarmScoring {
     CanalLake30,
     MagesValley31,
     TheGoldenGranary32,
     ShoresideExpanse33,
+}
+
+#[derive(Clone, Debug, EnumIter, Eq, Hash, PartialEq)]
+pub enum HouseScoring {
     Wildholds34,
     GreatCity35,
     GreengoldPlains36,
     Shieldgate37,
+}
+
+#[derive(Clone, Debug, EnumIter, Eq, Hash, PartialEq)]
+pub enum ShapeScoring {
     Borderlands38,
     LostBarony39,
     TheBrokenRoad40,
     TheCauldrons41,
 }
 
-#[derive(Clone, Debug)]
-pub enum Scroll {
-    A,
-    B,
-    C,
-    D,
+impl Card {
+    pub fn get_paths() -> Vec<(Self, String)> {
+        let mut paths = Vec::new();
+
+        macro_rules! push_paths {
+            ($name:ty, $card:expr, $path:literal, $offset:literal) => {
+                <$name>::iter().enumerate().for_each(|(i, c)| {
+                    paths.push((
+                        $card(c).into(),
+                        format!("textures/cards/{}/card_{:02}.png", $path, i + $offset),
+                    ));
+                });
+            };
+        }
+        push_paths!(Ambush, DrawableCard::Ambush, "ambushes", 1);
+        push_paths!(Exploration, DrawableCard::Exploration, "explorations", 5);
+        push_paths!(Season, Card::Season, "seasons", 18);
+        push_paths!(Scroll, Card::Scroll, "scrolls", 22);
+        push_paths!(TreeScoring, Scoring::Tree, "scoring/trees", 26);
+        push_paths!(FarmScoring, Scoring::Farm, "scoring/farms", 30);
+        push_paths!(HouseScoring, Scoring::House, "scoring/houses", 34);
+        push_paths!(ShapeScoring, Scoring::Shape, "scoring/shapes", 38);
+
+        paths
+    }
 }
 
 impl DrawableCard {

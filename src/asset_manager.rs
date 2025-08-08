@@ -1,4 +1,4 @@
-use crate::cards::{Ambush, DrawableCard, Exploration};
+use crate::cards::{Ambush, Card, DrawableCard, Exploration};
 use crate::terrain::{Choice, Terrain};
 use bevy::prelude::*;
 use std::collections::HashMap;
@@ -18,6 +18,9 @@ pub fn plugin(app: &mut App) {
             ),
         );
 }
+
+#[derive(Deref, Resource)]
+pub struct CardFronts(HashMap<Card, Handle<Image>>);
 
 #[derive(Resource)]
 pub struct CardBacks {
@@ -48,7 +51,19 @@ struct ResourceTracker<T: TrackableResource>(PhantomData<T>);
 #[derive(Event)]
 struct TerrainImagesLoaded;
 
+#[derive(Resource)]
+struct PlayerMaps {
+    side_a: Handle<Image>,
+    side_b: Handle<Image>,
+}
+
 fn load_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands.insert_resource(CardFronts(HashMap::from_iter(
+        Card::get_paths()
+            .into_iter()
+            .map(|(card, path)| (card, asset_server.load(path))),
+    )));
+
     commands.insert_resource(CardBacks {
         exploration: asset_server.load("textures/cards/explorations/back_exploration.png"),
         season: asset_server.load("textures/cards/seasons/back_season.png"),
@@ -63,6 +78,11 @@ fn load_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
             |terrain| (terrain.clone(), asset_server.load(terrain.get_file_path())),
         ))));
     commands.insert_resource(ResourceTracker::<TerrainImages>(PhantomData));
+
+    commands.insert_resource(PlayerMaps {
+        side_a: asset_server.load("textures/maps/map_a.png"),
+        side_b: asset_server.load("textures/maps/map_b.png"),
+    });
 }
 
 impl TrackableResource for TerrainImages {
