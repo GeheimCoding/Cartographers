@@ -1,22 +1,20 @@
 use crate::cards::{Ambush, Card, DrawableCard, Exploration};
 use crate::terrain::{Choice, Terrain};
+use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
 pub fn plugin(app: &mut App) {
-    app.add_event::<TerrainImagesLoaded>()
-        .add_systems(Startup, load_assets)
-        .add_systems(
-            PreUpdate,
-            (
-                track_resource::<TerrainImages>
-                    .run_if(resource_exists::<ResourceTracker<TerrainImages>>),
-                track_resource::<Choices>.run_if(resource_exists::<ResourceTracker<Choices>>),
-                generate_choices.run_if(on_event::<TerrainImagesLoaded>),
-            ),
-        );
+    app.add_systems(Startup, load_assets).add_systems(
+        PreUpdate,
+        (
+            track_resource::<TerrainImages>
+                .run_if(resource_exists::<ResourceTracker<TerrainImages>>),
+            track_resource::<Choices>.run_if(resource_exists::<ResourceTracker<Choices>>),
+        ),
+    );
 }
 
 #[derive(Deref, Resource)]
@@ -38,18 +36,22 @@ pub struct TerrainImages(pub HashMap<Terrain, Handle<Image>>);
 #[derive(Debug, Deref, Resource)]
 pub struct Choices(HashMap<DrawableCard, Vec<Choice>>);
 
+struct NoOpCommand;
+
+impl Command for NoOpCommand {
+    fn apply(self, _world: &mut World) {}
+}
+
 // TODO: extract resource tracking into it's own module?
 trait TrackableResource: Resource {
     fn get_handles(&self) -> Vec<UntypedHandle>;
-    fn on_fully_loaded(&self, _commands: &mut Commands) {}
+    fn on_fully_loaded(&self) -> impl Command {
+        NoOpCommand
+    }
 }
 
 #[derive(Resource)]
 struct ResourceTracker<T: TrackableResource>(PhantomData<T>);
-
-// TODO: refactor with one-shot systems?
-#[derive(Event)]
-struct TerrainImagesLoaded;
 
 #[derive(Resource)]
 struct PlayerMaps {
@@ -93,8 +95,8 @@ impl TrackableResource for TerrainImages {
             .collect()
     }
 
-    fn on_fully_loaded(&self, commands: &mut Commands) {
-        commands.send_event(TerrainImagesLoaded);
+    fn on_fully_loaded(&self) -> impl Command {
+        |world: &mut World| world.run_system_once(generate_choices).expect("run once")
     }
 }
 
@@ -106,9 +108,10 @@ impl TrackableResource for Choices {
             .collect()
     }
 
-    fn on_fully_loaded(&self, _commands: &mut Commands) {
+    fn on_fully_loaded(&self) -> impl Command {
         // TODO: add states and switch to running state at this point
         info!("Generated all choices!");
+        NoOpCommand
     }
 }
 
@@ -122,7 +125,7 @@ fn track_resource<T: TrackableResource>(
         .iter()
         .all(|handle| asset_server.is_loaded_with_dependencies(handle))
     {
-        trackable_resource.on_fully_loaded(&mut commands);
+        commands.queue(trackable_resource.on_fully_loaded());
         commands.remove_resource::<ResourceTracker<T>>();
     }
 }
