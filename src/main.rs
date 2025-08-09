@@ -6,19 +6,20 @@ mod deck;
 mod resource_tracking;
 mod terrain;
 
+use crate::asset_manager::{CardBacks, CardFronts, Choices, PlayerMaps, TerrainImages};
+use crate::cards::DrawableCard;
+use crate::cards::{Card, Scoring};
+use crate::terrain::Terrain;
 use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
-use bevy::image::TextureFormatPixelInfo;
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
-use bevy::render::render_resource::Extent3d;
 use bevy::sprite::Anchor;
 use bevy::sprite::SpriteImageMode::Scale;
 use bevy_framepace::FramepacePlugin;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use rand::rng;
 use rand::seq::SliceRandom;
-use rand::{Rng, rng};
-use std::collections::HashMap;
 
 #[derive(Resource)]
 struct Grid {
@@ -32,20 +33,8 @@ struct PlayerMap;
 
 #[derive(Component)]
 struct Cell {
-    category: Category,
+    terrain: Terrain,
     index: (usize, usize),
-}
-
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-enum Category {
-    Field,
-    Forest,
-    Monster,
-    Mountain,
-    Village,
-    Water,
-    #[default]
-    None,
 }
 
 #[derive(Component)]
@@ -53,20 +42,6 @@ struct RowSelector;
 
 #[derive(Component)]
 struct ColumnSelector;
-
-impl Category {
-    fn get_file_path(&self) -> &str {
-        match self {
-            Category::Field => "textures/categories/field.png",
-            Category::Forest => "textures/categories/forest.png",
-            Category::Monster => "textures/categories/monster.png",
-            Category::Mountain => "textures/categories/mountain.png",
-            Category::Village => "textures/categories/village.png",
-            Category::Water => "textures/categories/water.png",
-            Category::None => "textures/categories/none.png",
-        }
-    }
-}
 
 #[derive(Component)]
 struct Deck(Vec<Entity>);
@@ -81,42 +56,20 @@ struct DiscardPile(Vec<Entity>);
 struct BottomOfDiscardPile;
 
 #[derive(Component)]
-struct Card;
-
-#[derive(Component)]
 struct DrawnCard(Entity);
-
-#[derive(Component, Debug)]
-struct Choices(Vec<Choice>);
-
-#[derive(Debug)]
-struct Choice {
-    categories: Vec<Category>,
-    tiles: Vec<(usize, usize)>,
-    with_coin: bool,
-}
-
-#[derive(Resource)]
-struct CardBacks {
-    exploration: Handle<Image>,
-    season: Handle<Image>,
-    beach: Handle<Image>,
-    house: Handle<Image>,
-    shape: Handle<Image>,
-    tree: Handle<Image>,
-}
 
 #[derive(Component)]
 struct Scroll;
 
 #[derive(Component)]
-struct Task;
-
-#[derive(Resource)]
-struct Categories(HashMap<Category, Handle<Image>>);
-
-#[derive(Component)]
 struct GeneratedSprite;
+
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq, States)]
+enum AppState {
+    #[default]
+    Loading,
+    InGame,
+}
 
 fn main() {
     App::new()
@@ -143,46 +96,37 @@ fn main() {
         })
         .add_plugins(EguiPlugin::default())
         .add_plugins(WorldInspectorPlugin::default())
-        .add_systems(Startup, (setup, spawn_random_tasks))
+        .init_state::<AppState>()
+        .add_systems(OnEnter(AppState::InGame), (setup, spawn_random_tasks))
         .add_systems(
             Update,
             (
                 spawn_random_tasks.run_if(input_just_pressed(KeyCode::Enter)),
                 draw_card.run_if(input_just_pressed(KeyCode::Space)),
                 create_choices,
-            ),
+            )
+                .run_if(in_state(AppState::InGame)),
         )
         .run();
 }
 
 fn setup(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
     window: Single<&Window>,
+    player_maps: Res<PlayerMaps>,
+    terrain_images: Res<TerrainImages>,
+    card_fronts: Res<CardFronts>,
+    card_backs: Res<CardBacks>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     commands.spawn(Camera2d);
 
-    let categories = Categories(HashMap::from_iter(
-        [
-            Category::Field,
-            Category::Forest,
-            Category::Monster,
-            Category::Mountain,
-            Category::Village,
-            Category::Water,
-            Category::None,
-        ]
-        .iter()
-        .map(|c| (c.clone(), asset_server.load(c.get_file_path()))),
-    ));
-
     commands.spawn((
         PlayerMap,
         Sprite {
             anchor: Anchor::BottomLeft,
-            image: asset_server.load("textures/maps/map_a.png"),
+            image: player_maps.side_a.clone(),
             image_mode: Scale(ScalingMode::FitCenter),
             custom_size: Some(window.size()),
             ..default()
@@ -260,16 +204,16 @@ fn setup(
         for column in 0..dimension.1 {
             let index = (row, column);
             let cell = Cell {
-                category: if mountains.contains(&index) {
-                    Category::Mountain
+                terrain: if mountains.contains(&index) {
+                    Terrain::Mountain
                 } else {
-                    Category::default()
+                    Terrain::default()
                 },
                 index,
             };
             let cell = commands.spawn((
                 Sprite {
-                    image: categories.0[&cell.category].clone(),
+                    image: terrain_images[&cell.terrain].clone(),
                     custom_size: Some(cell_size),
                     ..default()
                 },
@@ -291,35 +235,28 @@ fn setup(
     }
     commands.spawn(observer);
 
-    let mut cards = (1..=4)
-        .map(|i| format!("textures/cards/ambushes/card_{i:02}.png"))
+    let mut drawable_cards = card_fronts
+        .iter()
+        .filter_map(|(card, handle)| match card {
+            Card::DrawableCard(drawable_card) => Some((drawable_card, handle)),
+            _ => None,
+        })
         .collect::<Vec<_>>();
-    cards.extend((5..=17).map(|i| format!("textures/cards/explorations/card_{i:02}.png")));
 
-    let card_backs = CardBacks {
-        exploration: asset_server.load("textures/cards/explorations/back_exploration.png"),
-        season: asset_server.load("textures/cards/seasons/back_season.png"),
-        beach: asset_server.load("textures/cards/tasks/beaches/back_beach.png"),
-        house: asset_server.load("textures/cards/tasks/houses/back_house.png"),
-        shape: asset_server.load("textures/cards/tasks/shapes/back_shape.png"),
-        tree: asset_server.load("textures/cards/tasks/trees/back_tree.png"),
-    };
-
-    let mut exploration_cards = Vec::new();
+    let mut deck_cards = Vec::new();
     let deck_position = Vec3::new(540.0, 240.0, 2.0);
-    cards.shuffle(&mut rng());
-    for card in cards.iter().skip(1) {
-        let mut exploration_card = commands.spawn((
-            Card,
+    drawable_cards.shuffle(&mut rng());
+    for (card, handle) in drawable_cards.iter().skip(1).cloned() {
+        let exploration_card = commands.spawn((
+            card.clone(),
             Sprite {
-                image: asset_server.load(card),
+                image: handle.clone(),
                 custom_size: Some(Vec2::new(150.0, 200.0)),
                 ..default()
             },
             Transform::from_translation(deck_position),
         ));
-        generate_choices(card).map(|choices| exploration_card.insert(choices));
-        exploration_cards.push(exploration_card.id());
+        deck_cards.push(exploration_card.id());
     }
     commands.spawn((
         TopOfDeck,
@@ -341,32 +278,30 @@ fn setup(
         Transform::from_translation(deck_position.with_z(1.0).with_x(deck_position.x - 180.0)),
     ));
 
-    let first_card = cards.first().expect("cards");
-    let mut drawn_card = commands.spawn((Card, Sprite::from_image(asset_server.load(first_card))));
-    generate_choices(first_card).map(|choices| drawn_card.insert(choices));
-    let drawn_card = drawn_card.id();
+    let (first_card, handle) = drawable_cards.first().expect("cards").clone();
+    let drawn_card = commands
+        .spawn((first_card.clone(), Sprite::from_image(handle.clone())))
+        .id();
     commands.spawn(DrawnCard(drawn_card));
 
-    commands.spawn(Deck(exploration_cards));
+    commands.spawn(Deck(deck_cards));
     commands.spawn(DiscardPile(Vec::new()));
 
-    commands.insert_resource(card_backs);
-    commands.insert_resource(categories);
-
-    (22..=25)
-        .map(|i| format!("textures/cards/scrolls/card_{i:02}.png"))
+    for (index, (_, scroll)) in card_fronts
+        .iter()
+        .filter(|(card, _)| matches!(card, Card::Scroll(_)))
         .enumerate()
-        .for_each(|(index, scroll)| {
-            commands.spawn((
-                Scroll,
-                Sprite {
-                    image: asset_server.load(scroll),
-                    custom_size: Some(Vec2::new(100.0, 133.3)),
-                    ..default()
-                },
-                Transform::from_translation(Vec3::new(index as f32 * 110.0 + 240.0, -130.0, 2.0)),
-            ));
-        });
+    {
+        commands.spawn((
+            Scroll,
+            Sprite {
+                image: scroll.clone(),
+                custom_size: Some(Vec2::new(100.0, 133.3)),
+                ..default()
+            },
+            Transform::from_translation(Vec3::new(index as f32 * 110.0 + 240.0, -130.0, 2.0)),
+        ));
+    }
 }
 
 fn position_selectors(
@@ -404,51 +339,67 @@ fn position_selectors(
 
 fn spawn_random_tasks(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    tasks: Query<Entity, With<Task>>,
+    tasks: Query<Entity, With<Scoring>>,
+    card_fronts: Res<CardFronts>,
 ) {
     for task in tasks.iter() {
         commands.entity(task).despawn();
     }
-    let random_tree = format!(
-        "textures/cards/tasks/trees/card_{:02}.png",
-        rng().random_range(26..=29)
-    );
-    let random_beach = format!(
-        "textures/cards/tasks/beaches/card_{:02}.png",
-        rng().random_range(30..=33)
-    );
-    let random_house = format!(
-        "textures/cards/tasks/houses/card_{:02}.png",
-        rng().random_range(34..=37)
-    );
-    let random_shape = format!(
-        "textures/cards/tasks/shapes/card_{:02}.png",
-        rng().random_range(38..=41)
-    );
-    let mut random_tasks = vec![random_tree, random_beach, random_house, random_shape];
-    random_tasks.shuffle(&mut rng());
+    let mut scoring_cards = card_fronts
+        .iter()
+        .filter_map(|(card, handle)| match card {
+            Card::Scoring(scoring) => Some((scoring, handle)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    scoring_cards.shuffle(&mut rng());
 
-    random_tasks.iter().enumerate().for_each(|(index, task)| {
-        commands.spawn((
-            Task,
-            Sprite {
-                image: asset_server.load(task),
-                custom_size: Some(Vec2::new(100.0, 133.3)),
-                ..default()
-            },
-            Transform::from_translation(Vec3::new(index as f32 * 110.0 + 240.0, -270.0, 2.0)),
-        ));
-    });
+    macro_rules! pick {
+        ($match_cond:pat) => {
+            scoring_cards
+                .iter()
+                .find_map(|(card, handle)| {
+                    if matches!(card, $match_cond) {
+                        Some((card.clone(), handle.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .expect("scoring card with given condition")
+        };
+    }
+
+    let mut random_scoring = vec![
+        pick!(Scoring::Tree(_)),
+        pick!(Scoring::Farm(_)),
+        pick!(Scoring::House(_)),
+        pick!(Scoring::Shape(_)),
+    ];
+    random_scoring.shuffle(&mut rng());
+
+    random_scoring
+        .into_iter()
+        .enumerate()
+        .for_each(|(index, (scoring, handle))| {
+            commands.spawn((
+                scoring.clone(),
+                Sprite {
+                    image: handle.clone(),
+                    custom_size: Some(Vec2::new(100.0, 133.3)),
+                    ..default()
+                },
+                Transform::from_translation(Vec3::new(index as f32 * 110.0 + 240.0, -270.0, 2.0)),
+            ));
+        });
 }
 
 fn draw_card(
     mut deck: Single<&mut Deck>,
     mut discard_pile: Single<&mut DiscardPile>,
     mut drawn_card: Single<&mut DrawnCard>,
-    mut cards: Query<(&mut Transform, &mut Sprite), With<Card>>,
-    mut visibility: Query<&mut Visibility, (With<Card>, Without<TopOfDeck>)>,
-    mut top_of_deck: Single<&mut Visibility, (With<TopOfDeck>, Without<Card>)>,
+    mut cards: Query<(&mut Transform, &mut Sprite), With<DrawableCard>>,
+    mut visibility: Query<&mut Visibility, (With<DrawableCard>, Without<TopOfDeck>)>,
+    mut top_of_deck: Single<&mut Visibility, (With<TopOfDeck>, Without<DrawableCard>)>,
 ) {
     let deck = &mut deck.0;
     if deck.is_empty() {
@@ -487,126 +438,10 @@ fn draw_card(
     }
 }
 
-fn generate_choices(card: &str) -> Option<Choices> {
-    match card.split("/").last().expect("path") {
-        "card_01.png" => Some(Choices(vec![Choice {
-            categories: vec![Category::Monster],
-            tiles: vec![(2, 0), (1, 1), (0, 2)],
-            with_coin: false,
-        }])),
-        "card_02.png" => Some(Choices(vec![Choice {
-            categories: vec![Category::Monster],
-            tiles: vec![(0, 0), (1, 0), (0, 2), (1, 2)],
-            with_coin: false,
-        }])),
-        "card_03.png" => Some(Choices(vec![Choice {
-            categories: vec![Category::Monster],
-            tiles: vec![(0, 0), (1, 0), (2, 0), (1, 1)],
-            with_coin: false,
-        }])),
-        "card_04.png" => Some(Choices(vec![Choice {
-            categories: vec![Category::Monster],
-            tiles: vec![(0, 0), (1, 0), (2, 0), (0, 1), (2, 1)],
-            with_coin: false,
-        }])),
-        "card_07.png" => Some(Choices(vec![
-            Choice {
-                categories: vec![Category::Water],
-                tiles: vec![(0, 0), (1, 0), (2, 0)],
-                with_coin: true,
-            },
-            Choice {
-                categories: vec![Category::Water],
-                tiles: vec![(0, 0), (0, 1), (1, 1), (1, 2), (2, 2)],
-                with_coin: false,
-            },
-        ])),
-        "card_08.png" => Some(Choices(vec![
-            Choice {
-                categories: vec![Category::Field],
-                tiles: vec![(0, 0), (1, 0)],
-                with_coin: true,
-            },
-            Choice {
-                categories: vec![Category::Field],
-                tiles: vec![(0, 1), (1, 0), (1, 1), (1, 2), (2, 1)],
-                with_coin: false,
-            },
-        ])),
-        "card_09.png" => Some(Choices(vec![
-            Choice {
-                categories: vec![Category::Village],
-                tiles: vec![(0, 0), (0, 1), (1, 0)],
-                with_coin: true,
-            },
-            Choice {
-                categories: vec![Category::Village],
-                tiles: vec![(0, 0), (0, 1), (1, 0), (1, 1), (1, 2)],
-                with_coin: false,
-            },
-        ])),
-        "card_10.png" => Some(Choices(vec![
-            Choice {
-                categories: vec![Category::Forest],
-                tiles: vec![(0, 1), (1, 0)],
-                with_coin: true,
-            },
-            Choice {
-                categories: vec![Category::Forest],
-                tiles: vec![(0, 1), (1, 0), (1, 1), (2, 0)],
-                with_coin: false,
-            },
-        ])),
-        "card_11.png" => Some(Choices(vec![Choice {
-            categories: vec![Category::Field, Category::Water],
-            tiles: vec![(0, 0), (1, 0), (2, 0), (2, 1), (2, 2)],
-            with_coin: false,
-        }])),
-        "card_12.png" => Some(Choices(vec![Choice {
-            categories: vec![Category::Village, Category::Field],
-            tiles: vec![(0, 0), (1, 0), (2, 0), (1, 1)],
-            with_coin: false,
-        }])),
-        "card_13.png" => Some(Choices(vec![Choice {
-            categories: vec![Category::Forest, Category::Field],
-            tiles: vec![(1, 0), (1, 1), (1, 2), (0, 2)],
-            with_coin: false,
-        }])),
-        "card_14.png" => Some(Choices(vec![Choice {
-            categories: vec![Category::Forest, Category::Village],
-            tiles: vec![(0, 0), (0, 1), (0, 2), (1, 2), (1, 3)],
-            with_coin: false,
-        }])),
-        "card_15.png" => Some(Choices(vec![Choice {
-            categories: vec![Category::Forest, Category::Water],
-            tiles: vec![(0, 0), (1, 0), (2, 0), (1, 1), (1, 2)],
-            with_coin: false,
-        }])),
-        "card_16.png" => Some(Choices(vec![Choice {
-            categories: vec![Category::Village, Category::Water],
-            tiles: vec![(0, 0), (0, 1), (0, 2), (0, 3)],
-            with_coin: false,
-        }])),
-        "card_17.png" => Some(Choices(vec![Choice {
-            categories: vec![
-                Category::Forest,
-                Category::Village,
-                Category::Field,
-                Category::Water,
-                Category::Monster,
-            ],
-            tiles: vec![(0, 0)],
-            with_coin: false,
-        }])),
-        _ => None,
-    }
-}
-
 fn create_choices(
     drawn_card: Single<Ref<DrawnCard>>,
-    choices: Query<&Choices>,
-    mut images: ResMut<Assets<Image>>,
-    categories: Res<Categories>,
+    choices: Res<Choices>,
+    cards: Query<&DrawableCard>,
     mut commands: Commands,
     generated: Query<Entity, With<GeneratedSprite>>,
 ) {
@@ -618,66 +453,14 @@ fn create_choices(
         commands.entity(generated).despawn();
     }
 
-    let Ok(choices) = choices.get(drawn_card.0) else {
-        return;
-    };
-    let mut count = 0;
-    for choice in choices.0.iter() {
-        for category in choice.categories.iter() {
-            let Some(mut image) = images.get_mut(&categories.0[category]) else {
-                // TODO: proper asset loading first
-                return;
-            };
-            let created_image = create_choice_image(&mut image, choice.tiles.clone());
-            let handle = images.add(created_image);
+    let drawn_card = cards.get(drawn_card.0).expect("card");
+    let choices = &choices[drawn_card];
 
-            commands.spawn((
-                GeneratedSprite,
-                Sprite::from_image(handle),
-                Transform::from_translation(Vec3::new(-512.0 + 250.0 * count as f32, -100.0, 3.0)),
-            ));
-            count += 1;
-        }
+    for (index, choice) in choices.iter().enumerate() {
+        commands.spawn((
+            GeneratedSprite,
+            Sprite::from_image(choice.image.clone()),
+            Transform::from_translation(Vec3::new(-512.0 + 250.0 * index as f32, -100.0, 3.0)),
+        ));
     }
-}
-
-fn create_choice_image(image: &mut Image, tiles: Vec<(usize, usize)>) -> Image {
-    let size = image.texture_descriptor.size;
-    let format = image.texture_descriptor.format;
-    let width = tiles.iter().map(|(_, y)| *y + 1).max().unwrap() as u32 * size.width;
-    let height = tiles.iter().map(|(x, _)| *x + 1).max().unwrap() as u32 * size.height;
-
-    let mut choice_image = Image::new_fill(
-        Extent3d {
-            width,
-            height,
-            depth_or_array_layers: size.depth_or_array_layers,
-        },
-        image.texture_descriptor.dimension,
-        &[0, 0, 0, 0],
-        format,
-        image.asset_usage,
-    );
-    let pixel_size = format.pixel_size();
-    let data = image.data.as_mut().expect("image data should be present");
-    let choice_data = choice_image
-        .data
-        .as_mut()
-        .expect("image data should be present");
-    for (row, column) in tiles {
-        let row = (height / size.height) as usize - row - 1;
-        for h in 0..size.height as usize {
-            let start = h * size.width as usize * pixel_size;
-            let end = start + size.width as usize * pixel_size;
-
-            let choice_start = (row * width as usize * size.height as usize
-                + column * size.width as usize
-                + h * width as usize)
-                * pixel_size;
-            let choice_end = choice_start + size.width as usize * pixel_size;
-
-            choice_data[choice_start..choice_end].copy_from_slice(&data[start..end]);
-        }
-    }
-    choice_image
 }

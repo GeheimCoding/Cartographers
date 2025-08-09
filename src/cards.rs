@@ -13,7 +13,7 @@ pub enum Card {
     Scoring(Scoring),
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Component, Debug, Eq, Hash, PartialEq)]
 pub enum DrawableCard {
     Ambush(Ambush),
     Exploration(Exploration),
@@ -66,7 +66,7 @@ pub enum Scroll {
     ScrollD25,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Component, Debug, Eq, Hash, PartialEq)]
 pub enum Scoring {
     Tree(TreeScoring),
     Farm(FarmScoring),

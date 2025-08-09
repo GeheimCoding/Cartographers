@@ -1,3 +1,4 @@
+use crate::AppState;
 use crate::cards::{Ambush, Card, DrawableCard, Exploration};
 use crate::resource_tracking::{ResourceTracking, TrackableResource};
 use crate::terrain::{Choice, Terrain};
@@ -11,28 +12,28 @@ pub fn plugin(app: &mut App) {
 }
 
 #[derive(Deref, Resource)]
-pub struct CardFronts(HashMap<Card, Handle<Image>>);
+pub struct CardFronts(pub HashMap<Card, Handle<Image>>);
 
 #[derive(Resource)]
 pub struct CardBacks {
-    exploration: Handle<Image>,
-    season: Handle<Image>,
-    farm: Handle<Image>,
-    house: Handle<Image>,
-    shape: Handle<Image>,
-    tree: Handle<Image>,
+    pub exploration: Handle<Image>,
+    pub season: Handle<Image>,
+    pub farm: Handle<Image>,
+    pub house: Handle<Image>,
+    pub shape: Handle<Image>,
+    pub tree: Handle<Image>,
 }
 
 #[derive(Debug, Deref, Resource)]
 pub struct TerrainImages(pub HashMap<Terrain, Handle<Image>>);
 
 #[derive(Debug, Deref, Resource)]
-pub struct Choices(HashMap<DrawableCard, Vec<Choice>>);
+pub struct Choices(pub HashMap<DrawableCard, Vec<Choice>>);
 
 #[derive(Resource)]
-struct PlayerMaps {
-    side_a: Handle<Image>,
-    side_b: Handle<Image>,
+pub struct PlayerMaps {
+    pub side_a: Handle<Image>,
+    pub side_b: Handle<Image>,
 }
 
 fn load_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -51,15 +52,15 @@ fn load_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
         tree: asset_server.load("textures/cards/scoring/trees/back_tree.png"),
     });
 
-    commands.insert_trackable_resource(TerrainImages(HashMap::from_iter(
-        Terrain::iter()
-            .map(|terrain| (terrain.clone(), asset_server.load(terrain.get_file_path()))),
-    )));
-
     commands.insert_resource(PlayerMaps {
         side_a: asset_server.load("textures/maps/map_a.png"),
         side_b: asset_server.load("textures/maps/map_b.png"),
     });
+
+    commands.insert_trackable_resource(TerrainImages(HashMap::from_iter(
+        Terrain::iter()
+            .map(|terrain| (terrain.clone(), asset_server.load(terrain.get_file_path()))),
+    )));
 }
 
 impl TrackableResource for TerrainImages {
@@ -82,9 +83,12 @@ impl TrackableResource for Choices {
     }
 
     fn on_tracked_handles_fully_loaded(&self) -> impl Command {
-        // TODO: add states and switch to running state at this point
-        info!("Generated all choices!");
-        |_world: &mut World| {}
+        |world: &mut World| {
+            let mut next_state = world
+                .get_resource_mut::<NextState<AppState>>()
+                .expect("next state");
+            next_state.set(AppState::InGame);
+        }
     }
 }
 
