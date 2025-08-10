@@ -16,8 +16,6 @@ use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy::sprite::SpriteImageMode::Scale;
 use bevy_framepace::FramepacePlugin;
-use bevy_inspector_egui::bevy_egui::EguiPlugin;
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use rand::rng;
 use rand::seq::SliceRandom;
 
@@ -62,7 +60,7 @@ struct DrawnCard(Entity);
 struct Scroll;
 
 #[derive(Component)]
-struct GeneratedSprite;
+struct ChoiceUI;
 
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq, States)]
 enum AppState {
@@ -94,8 +92,6 @@ fn main() {
             require_markers: false,
             ray_cast_visibility: RayCastVisibility::Any,
         })
-        .add_plugins(EguiPlugin::default())
-        .add_plugins(WorldInspectorPlugin::default())
         .init_state::<AppState>()
         .add_systems(OnEnter(AppState::InGame), (setup, spawn_random_tasks))
         .add_systems(
@@ -443,24 +439,45 @@ fn create_choices(
     choices: Res<Choices>,
     cards: Query<&DrawableCard>,
     mut commands: Commands,
-    generated: Query<Entity, With<GeneratedSprite>>,
+    choice_ui: Option<Single<Entity, With<ChoiceUI>>>,
 ) {
     if !drawn_card.is_changed() {
         return;
     }
-
-    for generated in generated {
-        commands.entity(generated).despawn();
-    }
+    choice_ui.map(|ui| commands.entity(*ui).despawn());
 
     let drawn_card = cards.get(drawn_card.0).expect("card");
     let choices = &choices[drawn_card];
 
-    for (index, choice) in choices.iter().enumerate() {
-        commands.spawn((
-            GeneratedSprite,
-            Sprite::from_image(choice.image.clone()),
-            Transform::from_translation(Vec3::new(-512.0 + 250.0 * index as f32, -100.0, 3.0)),
-        ));
-    }
+    commands
+        .spawn((
+            ChoiceUI,
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                column_gap: Val::Percent(5.0),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.1)),
+        ))
+        .with_children(|parent| {
+            choices.iter().for_each(|choice| {
+                parent.spawn((
+                    Node {
+                        border: UiRect::all(Val::Px(8.0)),
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BorderRadius::all(Val::Px(8.0)),
+                    BorderColor(Color::srgb_u8(10, 10, 10)),
+                    BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.8)),
+                    children![ImageNode {
+                        image: choice.image.clone(),
+                        ..default()
+                    }],
+                ));
+            });
+        });
 }
