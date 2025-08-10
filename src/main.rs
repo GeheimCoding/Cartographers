@@ -100,6 +100,7 @@ fn main() {
                 spawn_random_tasks.run_if(input_just_pressed(KeyCode::Enter)),
                 draw_card.run_if(input_just_pressed(KeyCode::Space)),
                 create_choices,
+                interactions,
             )
                 .run_if(in_state(AppState::InGame)),
         )
@@ -470,6 +471,7 @@ fn create_choices(
                         align_items: AlignItems::Center,
                         ..default()
                     },
+                    Button,
                     BorderRadius::all(Val::Px(8.0)),
                     BorderColor(Color::srgb_u8(10, 10, 10)),
                     BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.8)),
@@ -480,4 +482,25 @@ fn create_choices(
                 ));
             });
         });
+}
+
+fn interactions(
+    mut interaction_query: Query<
+        (&Interaction, &mut BorderColor),
+        (Changed<Interaction>, With<Button>),
+    >,
+) {
+    for (interaction, mut color) in &mut interaction_query {
+        match interaction {
+            Interaction::Pressed => {
+                info!("pressed");
+            }
+            Interaction::Hovered => {
+                color.0 = Color::srgb_u8(150, 150, 150);
+            }
+            Interaction::None => {
+                color.0 = Color::srgb_u8(10, 10, 10);
+            }
+        }
+    }
 }
