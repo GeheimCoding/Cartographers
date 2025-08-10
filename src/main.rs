@@ -449,6 +449,9 @@ fn create_choices(
 
     let drawn_card = cards.get(drawn_card.0).expect("card");
     let choices = &choices[drawn_card];
+    if choices.is_empty() {
+        return;
+    }
 
     commands
         .spawn((
@@ -485,15 +488,17 @@ fn create_choices(
 }
 
 fn interactions(
+    mut commands: Commands,
     mut interaction_query: Query<
         (&Interaction, &mut BorderColor),
         (Changed<Interaction>, With<Button>),
     >,
+    choice_ui: Single<Entity, With<ChoiceUI>>,
 ) {
     for (interaction, mut color) in &mut interaction_query {
         match interaction {
             Interaction::Pressed => {
-                info!("pressed");
+                commands.entity(*choice_ui).despawn();
             }
             Interaction::Hovered => {
                 color.0 = Color::srgb_u8(150, 150, 150);
