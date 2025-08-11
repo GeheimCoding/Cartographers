@@ -13,7 +13,7 @@ pub enum Terrain {
     Mountain,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Component, Debug)]
 pub struct Choice {
     pub terrain: Terrain,
     pub image: Handle<Image>,

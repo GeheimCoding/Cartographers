@@ -9,15 +9,22 @@ mod terrain;
 use crate::asset_manager::{CardBacks, CardFronts, Choices, PlayerMaps, TerrainImages};
 use crate::cards::DrawableCard;
 use crate::cards::{Card, Scoring};
-use crate::terrain::Terrain;
+use crate::terrain::{Choice, Terrain};
 use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy::sprite::SpriteImageMode::Scale;
+use bevy::window::PrimaryWindow;
 use bevy_framepace::FramepacePlugin;
 use rand::rng;
 use rand::seq::SliceRandom;
+
+#[derive(Clone, Debug, Default, Deref, Resource)]
+struct WorldPosition(Vec2);
+
+#[derive(Component)]
+struct MainCamera;
 
 #[derive(Resource)]
 struct Grid {
@@ -69,6 +76,9 @@ enum AppState {
     InGame,
 }
 
+#[derive(Component)]
+struct SelectedChoice(Choice);
+
 fn main() {
     App::new()
         .add_plugins((
@@ -92,13 +102,16 @@ fn main() {
             require_markers: false,
             ray_cast_visibility: RayCastVisibility::Any,
         })
+        .insert_resource(WorldPosition::default())
         .init_state::<AppState>()
         .add_systems(OnEnter(AppState::InGame), (setup, spawn_random_tasks))
+        .add_systems(PreUpdate, set_world_position)
         .add_systems(
             Update,
             (
                 spawn_random_tasks.run_if(input_just_pressed(KeyCode::Enter)),
                 draw_card.run_if(input_just_pressed(KeyCode::Space)),
+                position_selected_choice,
                 create_choices,
                 interactions,
             )
@@ -117,7 +130,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    commands.spawn(Camera2d);
+    commands.spawn((Camera2d, MainCamera));
 
     commands.spawn((
         PlayerMap,
@@ -441,11 +454,13 @@ fn create_choices(
     cards: Query<&DrawableCard>,
     mut commands: Commands,
     choice_ui: Option<Single<Entity, With<ChoiceUI>>>,
+    selected_choice: Option<Single<Entity, With<SelectedChoice>>>,
 ) {
     if !drawn_card.is_changed() {
         return;
     }
     choice_ui.map(|ui| commands.entity(*ui).despawn());
+    selected_choice.map(|choice| commands.entity(*choice).despawn());
 
     let drawn_card = cards.get(drawn_card.0).expect("card");
     let choices = &choices[drawn_card];
@@ -475,6 +490,7 @@ fn create_choices(
                         ..default()
                     },
                     Button,
+                    choice.clone(),
                     BorderRadius::all(Val::Px(8.0)),
                     BorderColor(Color::srgb_u8(10, 10, 10)),
                     BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.8)),
@@ -490,15 +506,20 @@ fn create_choices(
 fn interactions(
     mut commands: Commands,
     mut interaction_query: Query<
-        (&Interaction, &mut BorderColor),
+        (&Interaction, &Choice, &mut BorderColor),
         (Changed<Interaction>, With<Button>),
     >,
     choice_ui: Single<Entity, With<ChoiceUI>>,
 ) {
-    for (interaction, mut color) in &mut interaction_query {
+    for (interaction, choice, mut color) in &mut interaction_query {
         match interaction {
             Interaction::Pressed => {
                 commands.entity(*choice_ui).despawn();
+                commands.spawn((
+                    SelectedChoice(choice.clone()),
+                    Sprite::from_image(choice.image.clone()),
+                    Transform::from_translation(Vec3::default().with_z(8.0)),
+                ));
             }
             Interaction::Hovered => {
                 color.0 = Color::srgb_u8(150, 150, 150);
@@ -508,4 +529,27 @@ fn interactions(
             }
         }
     }
+}
+
+fn set_world_position(
+    mut world_position: ResMut<WorldPosition>,
+    q_window: Single<&Window, With<PrimaryWindow>>,
+    q_camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
+) {
+    let (camera, camera_transform) = *q_camera;
+    if let Some(projected) = q_window
+        .cursor_position()
+        .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor).ok())
+        .map(|ray| ray.origin.truncate())
+    {
+        world_position.0 = projected;
+    }
+}
+
+fn position_selected_choice(
+    mut selected_choice: Single<(&mut Transform, &SelectedChoice)>,
+    world_position: Res<WorldPosition>,
+) {
+    selected_choice.0.translation.x = world_position.x;
+    selected_choice.0.translation.y = world_position.y;
 }
