@@ -14,8 +14,6 @@ use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
-use bevy::sprite::Anchor;
-use bevy::sprite::SpriteImageMode::Scale;
 use bevy::window::PrimaryWindow;
 use bevy_framepace::FramepacePlugin;
 use rand::rng;
@@ -115,7 +113,7 @@ fn main() {
             (
                 spawn_random_tasks.run_if(input_just_pressed(KeyCode::Enter)),
                 draw_card.run_if(input_just_pressed(KeyCode::Space)),
-                position_selected_choice,
+                position_selected_choice.after(interactions),
                 rotate_selected_choice,
                 create_choices,
                 interactions,
@@ -143,10 +141,12 @@ fn setup(
     commands.spawn((
         PlayerMap,
         Sprite::from_image(player_maps.side_a.clone()),
-        Transform::from_translation(Vec3::default().with_x(
+        Transform::from_translation(Vec3::new(
             player_map.texture_descriptor.size.width as f32 / 2.0 * scale - window.width() / 2.0,
+            0.0,
+            -2.0,
         ))
-        .with_scale(Vec3::splat(scale).with_z(0.0)),
+        .with_scale(Vec3::splat(scale).with_z(1.0)),
     ));
 
     let dimension = (11, 11);
@@ -515,12 +515,13 @@ fn interactions(
         (Changed<Interaction>, With<Button>),
     >,
     choice_ui: Single<Entity, With<ChoiceUI>>,
+    player_map: Single<Entity, With<PlayerMap>>,
 ) {
     for (interaction, choice, mut color) in &mut interaction_query {
         match interaction {
             Interaction::Pressed => {
                 commands.entity(*choice_ui).despawn();
-                commands.spawn((
+                commands.entity(*player_map).with_child((
                     SelectedChoice {
                         choice: choice.clone(),
                         rotation: 0.0,
@@ -555,22 +556,25 @@ fn set_world_position(
 }
 
 fn position_selected_choice(
-    mut selected_choice: Single<(&mut Transform, &SelectedChoice)>,
+    mut selected_choice: Single<&mut Transform, With<SelectedChoice>>,
     world_position: Res<WorldPosition>,
+    player_map: Single<&Transform, (With<PlayerMap>, Without<SelectedChoice>)>,
 ) {
-    selected_choice.0.translation.x = world_position.x;
-    selected_choice.0.translation.y = world_position.y;
+    selected_choice.translation.x =
+        (world_position.x - player_map.translation.x) / player_map.scale.x;
+    selected_choice.translation.y =
+        (world_position.y - player_map.translation.y) / player_map.scale.y;
 }
 
 fn rotate_selected_choice(
-    mut selected_choice: Single<(&mut Transform, &SelectedChoice)>,
+    mut selected_choice: Single<&mut Transform, With<SelectedChoice>>,
     mut mouse_wheel_events: EventReader<MouseWheel>,
 ) {
     for event in mouse_wheel_events.read() {
         if event.y > 0.0 {
-            selected_choice.0.rotate_z(f32::to_radians(90.0));
+            selected_choice.rotate_z(f32::to_radians(90.0));
         } else if event.y < 0.0 {
-            selected_choice.0.rotate_z(f32::to_radians(-90.0));
+            selected_choice.rotate_z(f32::to_radians(-90.0));
         }
     }
 }
