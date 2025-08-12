@@ -134,19 +134,19 @@ fn setup(
     card_backs: Res<CardBacks>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    images: Res<Assets<Image>>,
 ) {
     commands.spawn((Camera2d, MainCamera));
 
+    let player_map = images.get(player_maps.side_a.id()).expect("player map");
+    let scale = window.height() / player_map.texture_descriptor.size.height as f32;
     commands.spawn((
         PlayerMap,
-        Sprite {
-            anchor: Anchor::BottomLeft,
-            image: player_maps.side_a.clone(),
-            image_mode: Scale(ScalingMode::FitCenter),
-            custom_size: Some(window.size()),
-            ..default()
-        },
-        Transform::from_translation(window.size().extend(0.0) / -2.0),
+        Sprite::from_image(player_maps.side_a.clone()),
+        Transform::from_translation(Vec3::default().with_x(
+            player_map.texture_descriptor.size.width as f32 / 2.0 * scale - window.width() / 2.0,
+        ))
+        .with_scale(Vec3::splat(scale).with_z(0.0)),
     ));
 
     let dimension = (11, 11);
