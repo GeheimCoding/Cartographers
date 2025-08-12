@@ -12,6 +12,7 @@ use crate::cards::{Card, Scoring};
 use crate::terrain::{Choice, Terrain};
 use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
 use bevy::input::common_conditions::input_just_pressed;
+use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy::sprite::SpriteImageMode::Scale;
@@ -77,7 +78,10 @@ enum AppState {
 }
 
 #[derive(Component)]
-struct SelectedChoice(Choice);
+struct SelectedChoice {
+    choice: Choice,
+    rotation: f32,
+}
 
 fn main() {
     App::new()
@@ -112,6 +116,7 @@ fn main() {
                 spawn_random_tasks.run_if(input_just_pressed(KeyCode::Enter)),
                 draw_card.run_if(input_just_pressed(KeyCode::Space)),
                 position_selected_choice,
+                rotate_selected_choice,
                 create_choices,
                 interactions,
             )
@@ -516,7 +521,10 @@ fn interactions(
             Interaction::Pressed => {
                 commands.entity(*choice_ui).despawn();
                 commands.spawn((
-                    SelectedChoice(choice.clone()),
+                    SelectedChoice {
+                        choice: choice.clone(),
+                        rotation: 0.0,
+                    },
                     Sprite::from_image(choice.image.clone()),
                     Transform::from_translation(Vec3::default().with_z(8.0)),
                 ));
@@ -552,4 +560,17 @@ fn position_selected_choice(
 ) {
     selected_choice.0.translation.x = world_position.x;
     selected_choice.0.translation.y = world_position.y;
+}
+
+fn rotate_selected_choice(
+    mut selected_choice: Single<(&mut Transform, &SelectedChoice)>,
+    mut mouse_wheel_events: EventReader<MouseWheel>,
+) {
+    for event in mouse_wheel_events.read() {
+        if event.y > 0.0 {
+            selected_choice.0.rotate_z(f32::to_radians(90.0));
+        } else if event.y < 0.0 {
+            selected_choice.0.rotate_z(f32::to_radians(-90.0));
+        }
+    }
 }
