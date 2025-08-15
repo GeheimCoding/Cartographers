@@ -3,13 +3,15 @@
 mod asset_manager;
 mod cards;
 mod deck;
+mod map;
 mod resource_tracking;
 mod terrain;
 
-use crate::asset_manager::{CardBacks, CardFronts, Choices, PlayerMaps, TerrainImages};
+use crate::asset_manager::{CardBacks, CardFronts, Choices};
 use crate::cards::DrawableCard;
 use crate::cards::{Card, Scoring};
-use crate::terrain::{Choice, Terrain};
+use crate::map::PlayerMap;
+use crate::terrain::Choice;
 use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::input::mouse::MouseWheel;
@@ -24,28 +26,6 @@ struct WorldPosition(Vec2);
 
 #[derive(Component)]
 struct MainCamera;
-
-#[derive(Resource)]
-struct Grid {
-    dimension: (usize, usize),
-    cell_size: Vec2,
-    offset: Vec2,
-}
-
-#[derive(Component)]
-struct PlayerMap;
-
-#[derive(Component)]
-struct Cell {
-    terrain: Terrain,
-    index: (usize, usize),
-}
-
-#[derive(Component)]
-struct RowSelector;
-
-#[derive(Component)]
-struct ColumnSelector;
 
 #[derive(Component)]
 struct Deck(Vec<Entity>);
@@ -75,6 +55,7 @@ enum AppState {
     InGame,
 }
 
+// TODO: refactor in separate module
 #[derive(Component)]
 struct SelectedChoice {
     choice: Choice,
@@ -95,6 +76,7 @@ fn main() {
             MeshPickingPlugin,
             resource_tracking::plugin,
             asset_manager::plugin,
+            map::plugin,
         ))
         .insert_resource(SpritePickingSettings {
             require_markers: false,
@@ -123,132 +105,8 @@ fn main() {
         .run();
 }
 
-fn setup(
-    mut commands: Commands,
-    window: Single<&Window>,
-    player_maps: Res<PlayerMaps>,
-    terrain_images: Res<TerrainImages>,
-    card_fronts: Res<CardFronts>,
-    card_backs: Res<CardBacks>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    images: Res<Assets<Image>>,
-) {
+fn setup(mut commands: Commands, card_fronts: Res<CardFronts>, card_backs: Res<CardBacks>) {
     commands.spawn((Camera2d, MainCamera));
-
-    let player_map = images.get(player_maps.side_a.id()).expect("player map");
-    let scale = window.height() / player_map.texture_descriptor.size.height as f32;
-    commands.spawn((
-        PlayerMap,
-        Sprite::from_image(player_maps.side_a.clone()),
-        Transform::from_translation(Vec3::new(
-            player_map.texture_descriptor.size.width as f32 / 2.0 * scale - window.width() / 2.0,
-            0.0,
-            -2.0,
-        ))
-        .with_scale(Vec3::splat(scale).with_z(1.0)),
-    ));
-
-    let dimension = (11, 11);
-    let cell_size = Vec2::new(37.2, 36.7);
-    let offset = Vec2::new(48.0, 145.0);
-    let size = cell_size * Vec2::new(dimension.0 as f32, dimension.1 as f32);
-
-    commands.insert_resource(Grid {
-        dimension,
-        cell_size,
-        offset,
-    });
-
-    commands
-        .spawn((
-            Visibility::Hidden,
-            Pickable {
-                should_block_lower: false,
-                is_hoverable: true,
-            },
-            Mesh2d(meshes.add(Rectangle::from_size(size))),
-            Transform::from_translation(
-                (offset + size / 2.0 - window.size() / 2.0).extend(1.0) * Vec3::new(1.0, -1.0, 1.0),
-            ),
-        ))
-        .observe(
-            |_: Trigger<Pointer<Out>>,
-             mut row_selector: Single<
-                &mut Visibility,
-                (With<RowSelector>, Without<ColumnSelector>),
-            >,
-             mut column_selector: Single<
-                &mut Visibility,
-                (With<ColumnSelector>, Without<RowSelector>),
-            >| {
-                **row_selector = Visibility::Hidden;
-                **column_selector = Visibility::Hidden;
-            },
-        );
-
-    let row_size = Vec2::new(size.x, cell_size.y);
-    commands.spawn((
-        RowSelector,
-        Pickable::IGNORE,
-        Visibility::Hidden,
-        Mesh2d(meshes.add(Rectangle::from_size(row_size))),
-        MeshMaterial2d(materials.add(Color::srgba(0.0, 0.0, 0.0, 0.2))),
-        Transform::from_translation(
-            (offset + row_size / 2.0 - window.size() / 2.0).extend(1.0) * Vec3::new(1.0, -1.0, 1.0),
-        ),
-    ));
-
-    let column_size = Vec2::new(cell_size.x, size.y);
-    commands.spawn((
-        ColumnSelector,
-        Pickable::IGNORE,
-        Visibility::Hidden,
-        Mesh2d(meshes.add(Rectangle::from_size(column_size))),
-        MeshMaterial2d(materials.add(Color::srgba(0.0, 0.0, 0.0, 0.2))),
-        Transform::from_translation(
-            (offset + column_size / 2.0 - window.size() / 2.0).extend(1.0)
-                * Vec3::new(1.0, -1.0, 1.0),
-        ),
-    ));
-
-    let mountains = vec![(1, 3), (2, 8), (5, 5), (8, 2), (9, 7)];
-    let mut observer = Observer::new(position_selectors);
-
-    for row in 0..dimension.0 {
-        for column in 0..dimension.1 {
-            let index = (row, column);
-            let cell = Cell {
-                terrain: if mountains.contains(&index) {
-                    Terrain::Mountain
-                } else {
-                    Terrain::default()
-                },
-                index,
-            };
-            let cell = commands.spawn((
-                Sprite {
-                    image: terrain_images[&cell.terrain].clone(),
-                    custom_size: Some(cell_size),
-                    ..default()
-                },
-                Pickable {
-                    should_block_lower: false,
-                    is_hoverable: true,
-                },
-                Transform::from_translation(
-                    (offset - window.size() / 2.0
-                        + cell_size / 2.0
-                        + cell_size * Vec2::new(column as f32, row as f32))
-                    .extend(1.0)
-                        * Vec3::new(1.0, -1.0, 1.0),
-                ),
-                cell,
-            ));
-            observer.watch_entity(cell.id());
-        }
-    }
-    commands.spawn(observer);
 
     let mut drawable_cards = card_fronts
         .iter()
@@ -317,39 +175,6 @@ fn setup(
             Transform::from_translation(Vec3::new(index as f32 * 110.0 + 240.0, -130.0, 2.0)),
         ));
     }
-}
-
-fn position_selectors(
-    trigger: Trigger<Pointer<Over>>,
-    query: Query<&Cell>,
-    grid: Res<Grid>,
-    window: Single<&Window>,
-    mut row_selector: Single<
-        (&mut Transform, &mut Visibility),
-        (With<RowSelector>, Without<ColumnSelector>),
-    >,
-    mut column_selector: Single<
-        (&mut Transform, &mut Visibility),
-        (With<ColumnSelector>, Without<RowSelector>),
-    >,
-) {
-    let cell = query.get(trigger.target()).unwrap();
-    row_selector.0.translation = Vec3::new(
-        row_selector.0.translation.x,
-        (grid.offset.y + cell.index.0 as f32 * grid.cell_size.y - window.height() / 2.0
-            + grid.cell_size.y / 2.0)
-            * -1.0,
-        row_selector.0.translation.z,
-    );
-    column_selector.0.translation = Vec3::new(
-        grid.offset.x + cell.index.1 as f32 * grid.cell_size.x - window.width() / 2.0
-            + grid.cell_size.x / 2.0,
-        column_selector.0.translation.y,
-        column_selector.0.translation.z,
-    );
-
-    *row_selector.1 = Visibility::Inherited;
-    *column_selector.1 = Visibility::Inherited;
 }
 
 fn spawn_random_tasks(
@@ -499,6 +324,7 @@ fn create_choices(
                     BorderRadius::all(Val::Px(8.0)),
                     BorderColor(Color::srgb_u8(10, 10, 10)),
                     BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.8)),
+                    // TODO: use custom image size based on grid/scale of cell
                     children![ImageNode {
                         image: choice.image.clone(),
                         ..default()
@@ -508,6 +334,7 @@ fn create_choices(
         });
 }
 
+// TODO: refactor to use Observables instead?
 fn interactions(
     mut commands: Commands,
     mut interaction_query: Query<
@@ -526,6 +353,7 @@ fn interactions(
                         choice: choice.clone(),
                         rotation: 0.0,
                     },
+                    // TODO: use custom image size based on grid/scale of cell
                     Sprite::from_image(choice.image.clone()),
                     Transform::from_translation(Vec3::default().with_z(8.0)),
                 ));
@@ -542,11 +370,11 @@ fn interactions(
 
 fn set_world_position(
     mut world_position: ResMut<WorldPosition>,
-    q_window: Single<&Window, With<PrimaryWindow>>,
-    q_camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
 ) {
-    let (camera, camera_transform) = *q_camera;
-    if let Some(projected) = q_window
+    let (camera, camera_transform) = *camera;
+    if let Some(projected) = window
         .cursor_position()
         .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor).ok())
         .map(|ray| ray.origin.truncate())

@@ -11,10 +11,10 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Startup, load_assets);
 }
 
-#[derive(Deref, Resource)]
+#[derive(Clone, Debug, Deref, Resource)]
 pub struct CardFronts(pub HashMap<Card, Handle<Image>>);
 
-#[derive(Resource)]
+#[derive(Clone, Debug, Resource)]
 pub struct CardBacks {
     pub exploration: Handle<Image>,
     pub season: Handle<Image>,
@@ -24,13 +24,13 @@ pub struct CardBacks {
     pub tree: Handle<Image>,
 }
 
-#[derive(Debug, Deref, Resource)]
+#[derive(Clone, Debug, Deref, Resource)]
 pub struct TerrainImages(pub HashMap<Terrain, Handle<Image>>);
 
-#[derive(Debug, Deref, Resource)]
+#[derive(Clone, Debug, Deref, Resource)]
 pub struct Choices(pub HashMap<DrawableCard, Vec<Choice>>);
 
-#[derive(Resource)]
+#[derive(Clone, Debug, Resource)]
 pub struct PlayerMaps {
     pub side_a: Handle<Image>,
     pub side_b: Handle<Image>,
@@ -80,6 +80,19 @@ impl TrackableResource for Choices {
         self.values()
             .flat_map(|choices| choices.iter().map(|choice| choice.image.clone().untyped()))
             .collect()
+    }
+
+    fn on_tracked_handles_fully_loaded(&self) -> impl Command {
+        |world: &mut World| {
+            let player_maps = world.resource::<PlayerMaps>().clone();
+            world.commands().insert_trackable_resource(player_maps);
+        }
+    }
+}
+
+impl TrackableResource for PlayerMaps {
+    fn get_handles_to_track(&self) -> Vec<UntypedHandle> {
+        vec![self.side_a.clone().untyped(), self.side_b.clone().untyped()]
     }
 
     fn on_tracked_handles_fully_loaded(&self) -> impl Command {
