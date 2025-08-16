@@ -34,3 +34,24 @@ impl Terrain {
         }
     }
 }
+
+impl Choice {
+    pub fn size(&self, cell_size: Vec2) -> Vec2 {
+        let max_row = self
+            .tiles
+            .iter()
+            .map(|(row, _)| *row + 1)
+            .max()
+            .expect("at least one tile");
+        let max_column = self
+            .tiles
+            .iter()
+            .map(|(_, column)| *column + 1)
+            .max()
+            .expect("at least one tile");
+        Vec2::new(
+            max_column as f32 * cell_size.x,
+            max_row as f32 * cell_size.y,
+        )
+    }
+}

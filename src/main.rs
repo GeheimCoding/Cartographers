@@ -10,7 +10,7 @@ mod terrain;
 use crate::asset_manager::{CardBacks, CardFronts, Choices};
 use crate::cards::DrawableCard;
 use crate::cards::{Card, Scoring};
-use crate::map::PlayerMap;
+use crate::map::{Grid, PlayerMap};
 use crate::terrain::Choice;
 use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
 use bevy::input::common_conditions::input_just_pressed;
@@ -285,6 +285,7 @@ fn create_choices(
     mut commands: Commands,
     choice_ui: Option<Single<Entity, With<ChoiceUI>>>,
     selected_choice: Option<Single<Entity, With<SelectedChoice>>>,
+    grid: Res<Grid>,
 ) {
     if !drawn_card.is_changed() {
         return;
@@ -313,6 +314,7 @@ fn create_choices(
         ))
         .with_children(|parent| {
             choices.iter().for_each(|choice| {
+                let size = choice.size(grid.cell_size);
                 parent.spawn((
                     Node {
                         border: UiRect::all(Val::Px(8.0)),
@@ -324,11 +326,17 @@ fn create_choices(
                     BorderRadius::all(Val::Px(8.0)),
                     BorderColor(Color::srgb_u8(10, 10, 10)),
                     BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.8)),
-                    // TODO: use custom image size based on grid/scale of cell
-                    children![ImageNode {
-                        image: choice.image.clone(),
-                        ..default()
-                    }],
+                    children![(
+                        Node {
+                            width: Val::Px(size.x),
+                            height: Val::Px(size.y),
+                            ..default()
+                        },
+                        ImageNode {
+                            image: choice.image.clone(),
+                            ..default()
+                        }
+                    )],
                 ));
             });
         });
@@ -343,6 +351,7 @@ fn interactions(
     >,
     choice_ui: Single<Entity, With<ChoiceUI>>,
     player_map: Single<Entity, With<PlayerMap>>,
+    grid: Res<Grid>,
 ) {
     for (interaction, choice, mut color) in &mut interaction_query {
         match interaction {
@@ -353,8 +362,11 @@ fn interactions(
                         choice: choice.clone(),
                         rotation: 0.0,
                     },
-                    // TODO: use custom image size based on grid/scale of cell
-                    Sprite::from_image(choice.image.clone()),
+                    Sprite {
+                        image: choice.image.clone(),
+                        custom_size: Some(choice.size(grid.cell_size)),
+                        ..default()
+                    },
                     Transform::from_translation(Vec3::default().with_z(8.0)),
                 ));
             }

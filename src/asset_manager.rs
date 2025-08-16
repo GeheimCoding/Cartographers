@@ -33,6 +33,7 @@ pub struct Choices(pub HashMap<DrawableCard, Vec<Choice>>);
 #[derive(Clone, Debug, Resource)]
 pub struct PlayerMaps {
     pub side_a: Handle<Image>,
+    pub side_a_rect: Rect,
     pub side_b: Handle<Image>,
 }
 
@@ -54,6 +55,7 @@ fn load_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     commands.insert_resource(PlayerMaps {
         side_a: asset_server.load("textures/maps/map_a.png"),
+        side_a_rect: Rect::from_corners(Vec2::new(68.0, 200.0), Vec2::new(634.0, 760.0)),
         side_b: asset_server.load("textures/maps/map_b.png"),
     });
 
