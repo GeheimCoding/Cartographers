@@ -1,6 +1,6 @@
 use crate::asset_manager::{PlayerMaps, TerrainImages};
 use crate::terrain::Terrain;
-use crate::{AppState, SelectedChoice};
+use crate::{AppState, SelectedChoice, WorldPosition};
 use bevy::prelude::*;
 
 pub fn plugin(app: &mut App) {
@@ -12,13 +12,14 @@ pub struct PlayerMap;
 
 #[derive(Clone, Debug, Resource)]
 pub struct Grid {
-    pub dimension: (usize, usize),
-    pub top_left_cell_offset: Vec2,
     pub cell_size: Vec2,
+    dimension: (usize, usize),
+    top_left_cell_offset: Vec2,
+    scale: f32,
 }
 
 #[derive(Clone, Component, Debug)]
-struct Cell {
+pub struct Cell {
     terrain: Terrain,
     index: (usize, usize),
 }
@@ -43,6 +44,39 @@ impl Inverse for Vec2 {
     }
 }
 
+pub fn is_inside_grid(
+    grid: Option<Res<Grid>>,
+    world_position: Res<WorldPosition>,
+    player_map: Single<&Transform, With<PlayerMap>>,
+) -> bool {
+    let Some(grid) = grid.as_ref() else {
+        return false;
+    };
+    let min = player_map.translation.truncate()
+        + (grid.top_left_cell_offset - grid.cell_size.inverse_y() / 2.0) * grid.scale;
+    let max = min + (grid.dimension.to_vec2() * grid.cell_size).inverse_y() * grid.scale;
+    let rect = Rect::from_corners(min, max);
+    rect.contains(**world_position)
+}
+
+pub fn snap_selected_choice_to_cell(
+    trigger: Trigger<Pointer<Over>>,
+    cells: Query<&Cell>,
+    grid: Res<Grid>,
+    mut selected_choice: Option<Single<&mut Transform, With<SelectedChoice>>>,
+) {
+    let Some(selected_choice) = selected_choice.as_mut() else {
+        return;
+    };
+    let cell = cells.get(trigger.target()).expect("cell");
+
+    // TODO: set correct position also based on rotation
+    selected_choice.translation = (grid.top_left_cell_offset
+        + (cell.index.1, cell.index.0).to_vec2() * grid.cell_size.inverse_y())
+    .extend(selected_choice.translation.z);
+    info!("hovered cell: {:?}", cell);
+}
+
 fn setup(
     mut commands: Commands,
     images: Res<Assets<Image>>,
@@ -64,6 +98,7 @@ fn setup(
         dimension: map_dimension,
         cell_size,
         top_left_cell_offset,
+        scale: map_scale,
     });
     let map_entity = commands
         .spawn((
@@ -107,21 +142,4 @@ fn setup(
         }
     }
     commands.spawn(observer);
-}
-
-fn snap_selected_choice_to_cell(
-    trigger: Trigger<Pointer<Over>>,
-    cells: Query<&Cell>,
-    _grid: Res<Grid>,
-    mut selected_choice: Option<Single<&mut Transform, With<SelectedChoice>>>,
-) {
-    let Some(selected_choice) = selected_choice.as_mut() else {
-        return;
-    };
-    let cell = cells.get(trigger.target()).expect("cell");
-
-    // TODO: set correct position also based on rotation
-    selected_choice.translation.x = selected_choice.translation.x;
-    selected_choice.translation.y = selected_choice.translation.y;
-    info!("hovered cell: {:?}", cell);
 }

@@ -10,7 +10,7 @@ mod terrain;
 use crate::asset_manager::{CardBacks, CardFronts, Choices};
 use crate::cards::DrawableCard;
 use crate::cards::{Card, Scoring};
-use crate::map::{Grid, PlayerMap};
+use crate::map::{Grid, PlayerMap, is_inside_grid, snap_selected_choice_to_cell};
 use crate::terrain::Choice;
 use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
 use bevy::input::common_conditions::input_just_pressed;
@@ -95,7 +95,10 @@ fn main() {
             (
                 spawn_random_tasks.run_if(input_just_pressed(KeyCode::Enter)),
                 draw_card.run_if(input_just_pressed(KeyCode::Space)),
-                position_selected_choice.after(interactions),
+                position_selected_choice
+                    .after(interactions)
+                    .after(snap_selected_choice_to_cell)
+                    .run_if(not(is_inside_grid)),
                 rotate_selected_choice,
                 create_choices,
                 interactions,
