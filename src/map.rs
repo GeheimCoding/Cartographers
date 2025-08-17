@@ -63,17 +63,23 @@ pub fn snap_selected_choice_to_cell(
     trigger: Trigger<Pointer<Over>>,
     cells: Query<&Cell>,
     grid: Res<Grid>,
-    mut selected_choice: Option<Single<&mut Transform, With<SelectedChoice>>>,
+    mut selected_choice: Option<Single<(&mut Transform, &SelectedChoice)>>,
 ) {
     let Some(selected_choice) = selected_choice.as_mut() else {
         return;
     };
     let cell = cells.get(trigger.target()).expect("cell");
+    let choice_size = selected_choice.1.choice.size(grid.cell_size);
+    let reference_cell = (((choice_size / grid.cell_size).yx() - Vec2::X) / 2.0).floor();
+    let reference_cell_offset =
+        (reference_cell - ((choice_size / grid.cell_size).yx() - Vec2::ONE) / 2.0) * grid.cell_size;
+    let reference_cell = (reference_cell.x as usize, reference_cell.y as usize);
 
     // TODO: set correct position also based on rotation
-    selected_choice.translation = (grid.top_left_cell_offset
+    selected_choice.0.translation = (grid.top_left_cell_offset - reference_cell_offset.yx()
         + (cell.index.1, cell.index.0).to_vec2() * grid.cell_size.inverse_y())
-    .extend(selected_choice.translation.z);
+    .extend(selected_choice.0.translation.z);
+    info!("reference_cell: {:?}", reference_cell);
     info!("hovered cell: {:?}", cell);
 }
 
