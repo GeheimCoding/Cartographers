@@ -10,7 +10,7 @@ mod terrain;
 use crate::asset_manager::{CardBacks, CardFronts, Choices};
 use crate::cards::DrawableCard;
 use crate::cards::{Card, Scoring};
-use crate::map::{Grid, PlayerMap, is_inside_grid, snap_selected_choice_to_cell};
+use crate::map::{Grid, PlayerMap, is_inside_grid, trigger_grid_snapping};
 use crate::terrain::Choice;
 use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
 use bevy::input::common_conditions::input_just_pressed;
@@ -60,7 +60,11 @@ enum AppState {
 struct SelectedChoice {
     choice: Choice,
     rotation: f32,
+    latest_hovered_cell: Option<Entity>,
 }
+
+#[derive(Event)]
+struct SnapSelectedChoiceToCell(Entity);
 
 fn main() {
     App::new()
@@ -86,6 +90,7 @@ fn main() {
             require_markers: false,
             ray_cast_visibility: RayCastVisibility::Any,
         })
+        .add_event::<SnapSelectedChoiceToCell>()
         .insert_resource(WorldPosition::default())
         .init_state::<AppState>()
         .add_systems(OnEnter(AppState::InGame), (setup, spawn_random_tasks))
@@ -97,7 +102,7 @@ fn main() {
                 draw_card.run_if(input_just_pressed(KeyCode::Space)),
                 position_selected_choice
                     .after(interactions)
-                    .after(snap_selected_choice_to_cell)
+                    .after(trigger_grid_snapping)
                     .run_if(not(is_inside_grid)),
                 rotate_selected_choice,
                 create_choices,
@@ -364,6 +369,7 @@ fn interactions(
                     SelectedChoice {
                         choice: choice.clone(),
                         rotation: 0.0,
+                        latest_hovered_cell: None,
                     },
                     Sprite {
                         image: choice.image.clone(),
@@ -399,25 +405,28 @@ fn set_world_position(
 }
 
 fn position_selected_choice(
-    mut selected_choice: Single<&mut Transform, With<SelectedChoice>>,
+    mut selected_choice: Single<(&mut Transform, &mut SelectedChoice)>,
     world_position: Res<WorldPosition>,
     player_map: Single<&Transform, (With<PlayerMap>, Without<SelectedChoice>)>,
 ) {
-    selected_choice.translation.x =
+    selected_choice.0.translation.x =
         (world_position.x - player_map.translation.x) / player_map.scale.x;
-    selected_choice.translation.y =
+    selected_choice.0.translation.y =
         (world_position.y - player_map.translation.y) / player_map.scale.y;
+    selected_choice.1.latest_hovered_cell = None;
 }
 
 fn rotate_selected_choice(
-    mut selected_choice: Single<&mut Transform, With<SelectedChoice>>,
+    mut commands: Commands,
+    mut selected_choice: Single<(&mut Transform, &mut SelectedChoice)>,
     mut mouse_wheel_events: EventReader<MouseWheel>,
 ) {
     for event in mouse_wheel_events.read() {
-        if event.y > 0.0 {
-            selected_choice.rotate_z(f32::to_radians(90.0));
-        } else if event.y < 0.0 {
-            selected_choice.rotate_z(f32::to_radians(-90.0));
-        }
+        selected_choice.1.rotation = (selected_choice.1.rotation + 90.0 * event.y.signum()) % 360.0;
+        selected_choice.0.rotation = Quat::from_rotation_z(selected_choice.1.rotation.to_radians());
+        selected_choice
+            .1
+            .latest_hovered_cell
+            .map(|cell| commands.send_event(SnapSelectedChoiceToCell(cell)));
     }
 }

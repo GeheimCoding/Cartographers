@@ -1,10 +1,14 @@
 use crate::asset_manager::{PlayerMaps, TerrainImages};
 use crate::terrain::Terrain;
-use crate::{AppState, SelectedChoice, WorldPosition};
+use crate::{AppState, SelectedChoice, SnapSelectedChoiceToCell, WorldPosition};
 use bevy::prelude::*;
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(OnEnter(AppState::InGame), setup);
+    app.add_systems(OnEnter(AppState::InGame), setup)
+        .add_systems(
+            Update,
+            snap_selected_choice_to_cell.run_if(on_event::<SnapSelectedChoiceToCell>),
+        );
 }
 
 #[derive(Clone, Component, Debug)]
@@ -59,16 +63,20 @@ pub fn is_inside_grid(
     rect.contains(**world_position)
 }
 
-pub fn snap_selected_choice_to_cell(
-    trigger: Trigger<Pointer<Over>>,
-    cells: Query<&Cell>,
+pub fn trigger_grid_snapping(trigger: Trigger<Pointer<Over>>, mut commands: Commands) {
+    commands.send_event(SnapSelectedChoiceToCell(trigger.target()));
+}
+
+fn snap_selected_choice_to_cell(
     grid: Res<Grid>,
-    mut selected_choice: Option<Single<(&mut Transform, &SelectedChoice)>>,
+    cells: Query<&Cell>,
+    mut event_reader: EventReader<SnapSelectedChoiceToCell>,
+    mut selected_choice: Single<(&mut Transform, &mut SelectedChoice)>,
 ) {
-    let Some(selected_choice) = selected_choice.as_mut() else {
-        return;
-    };
-    let cell = cells.get(trigger.target()).expect("cell");
+    let cell = event_reader.read().next().expect("cell");
+    selected_choice.1.latest_hovered_cell = Some(cell.0);
+
+    let cell = cells.get(cell.0).expect("cell");
     let choice_size = selected_choice.1.choice.size(grid.cell_size);
     let reference_cell = (((choice_size / grid.cell_size).yx() - Vec2::X) / 2.0).floor();
     let reference_cell_offset =
@@ -81,6 +89,8 @@ pub fn snap_selected_choice_to_cell(
     .extend(selected_choice.0.translation.z);
     info!("reference_cell: {:?}", reference_cell);
     info!("hovered cell: {:?}", cell);
+
+    event_reader.clear();
 }
 
 fn setup(
@@ -116,7 +126,7 @@ fn setup(
         .id();
 
     let mountains = vec![(1, 3), (2, 8), (5, 5), (8, 2), (9, 7)];
-    let mut observer = Observer::new(snap_selected_choice_to_cell);
+    let mut observer = Observer::new(trigger_grid_snapping);
     for column in 0..map_dimension.0 {
         for row in 0..map_dimension.1 {
             let index = (row, column);
