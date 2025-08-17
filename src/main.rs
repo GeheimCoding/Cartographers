@@ -10,7 +10,7 @@ mod terrain;
 use crate::asset_manager::{CardBacks, CardFronts, Choices};
 use crate::cards::DrawableCard;
 use crate::cards::{Card, Scoring};
-use crate::map::{Grid, PlayerMap, is_inside_grid, trigger_grid_snapping};
+use crate::map::{Grid, PlayerMap, is_inside_grid, snap_selected_choice_to_cell};
 use crate::terrain::Choice;
 use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
 use bevy::input::common_conditions::input_just_pressed;
@@ -102,9 +102,9 @@ fn main() {
                 draw_card.run_if(input_just_pressed(KeyCode::Space)),
                 position_selected_choice
                     .after(interactions)
-                    .after(trigger_grid_snapping)
+                    .after(snap_selected_choice_to_cell)
                     .run_if(not(is_inside_grid)),
-                rotate_selected_choice,
+                rotate_selected_choice.before(snap_selected_choice_to_cell),
                 create_choices,
                 interactions,
             )
@@ -422,7 +422,8 @@ fn rotate_selected_choice(
     mut mouse_wheel_events: EventReader<MouseWheel>,
 ) {
     for event in mouse_wheel_events.read() {
-        selected_choice.1.rotation = (selected_choice.1.rotation + 90.0 * event.y.signum()) % 360.0;
+        selected_choice.1.rotation =
+            (selected_choice.1.rotation + 90.0 * event.y.signum() + 360.0) % 360.0;
         selected_choice.0.rotation = Quat::from_rotation_z(selected_choice.1.rotation.to_radians());
         selected_choice
             .1

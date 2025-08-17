@@ -63,11 +63,7 @@ pub fn is_inside_grid(
     rect.contains(**world_position)
 }
 
-pub fn trigger_grid_snapping(trigger: Trigger<Pointer<Over>>, mut commands: Commands) {
-    commands.send_event(SnapSelectedChoiceToCell(trigger.target()));
-}
-
-fn snap_selected_choice_to_cell(
+pub fn snap_selected_choice_to_cell(
     grid: Res<Grid>,
     cells: Query<&Cell>,
     mut event_reader: EventReader<SnapSelectedChoiceToCell>,
@@ -76,21 +72,33 @@ fn snap_selected_choice_to_cell(
     let cell = event_reader.read().next().expect("cell");
     selected_choice.1.latest_hovered_cell = Some(cell.0);
 
+    let rotation = selected_choice.1.rotation.to_radians();
+    let cos = rotation.cos().round();
+    let sin = rotation.sin().round();
+    let rotation_factor = Vec2::new(cos - sin, cos + sin);
+
     let cell = cells.get(cell.0).expect("cell");
     let choice_size = selected_choice.1.choice.size(grid.cell_size);
     let reference_cell = (((choice_size / grid.cell_size).yx() - Vec2::X) / 2.0).floor();
-    let reference_cell_offset =
+    let mut reference_cell_offset =
         (reference_cell - ((choice_size / grid.cell_size).yx() - Vec2::ONE) / 2.0) * grid.cell_size;
     let reference_cell = (reference_cell.x as usize, reference_cell.y as usize);
 
-    // TODO: set correct position also based on rotation
-    selected_choice.0.translation = (grid.top_left_cell_offset - reference_cell_offset.yx()
+    if cos == 0.0 {
+        reference_cell_offset = reference_cell_offset.yx();
+    }
+    selected_choice.0.translation = (grid.top_left_cell_offset
+        - reference_cell_offset.yx() * rotation_factor
         + (cell.index.1, cell.index.0).to_vec2() * grid.cell_size.inverse_y())
     .extend(selected_choice.0.translation.z);
     info!("reference_cell: {:?}", reference_cell);
     info!("hovered cell: {:?}", cell);
 
     event_reader.clear();
+}
+
+fn trigger_grid_snapping(trigger: Trigger<Pointer<Over>>, mut commands: Commands) {
+    commands.send_event(SnapSelectedChoiceToCell(trigger.target()));
 }
 
 fn setup(
