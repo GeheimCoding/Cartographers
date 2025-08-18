@@ -91,8 +91,34 @@ pub fn snap_selected_choice_to_cell(
         - reference_cell_offset.yx() * rotation_factor
         + (cell.index.1, cell.index.0).to_vec2() * grid.cell_size.inverse_y())
     .extend(selected_choice.0.translation.z);
+
+    info!("{:?}", rotation.to_degrees());
+    let shifted_tiles = selected_choice
+        .1
+        .choice
+        .tiles
+        .iter()
+        .map(|(row, column)| {
+            let shifted = (
+                *row as isize - reference_cell.0 as isize,
+                *column as isize - reference_cell.1 as isize,
+            );
+            if rotation.to_degrees() == 90.0 {
+                (shifted.1, -shifted.0)
+            } else if rotation.to_degrees() == 180.0 {
+                (-shifted.0, -shifted.1)
+            } else if rotation.to_degrees() == 270.0 {
+                (-shifted.1, shifted.0)
+            } else {
+                shifted
+            }
+        })
+        .collect::<Vec<_>>();
+
     info!("reference_cell: {:?}", reference_cell);
     info!("hovered cell: {:?}", cell);
+    info!("tiles: {:?}", selected_choice.1.choice.tiles);
+    info!("shifted_tiles: {:?}", shifted_tiles);
 
     event_reader.clear();
 }
