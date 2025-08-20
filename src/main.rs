@@ -60,6 +60,7 @@ enum AppState {
 struct SelectedChoice {
     choice: Choice,
     rotation: f32,
+    occupied_tiles: Option<Vec<(isize, isize)>>,
     latest_hovered_cell: Option<Entity>,
 }
 
@@ -369,6 +370,7 @@ fn interactions(
                     SelectedChoice {
                         choice: choice.clone(),
                         rotation: 0.0,
+                        occupied_tiles: None,
                         latest_hovered_cell: None,
                     },
                     Sprite {
@@ -405,7 +407,7 @@ fn set_world_position(
 }
 
 fn position_selected_choice(
-    mut selected_choice: Single<(&mut Transform, &mut SelectedChoice)>,
+    mut selected_choice: Single<(&mut Transform, &mut SelectedChoice, &mut Sprite)>,
     world_position: Res<WorldPosition>,
     player_map: Single<&Transform, (With<PlayerMap>, Without<SelectedChoice>)>,
 ) {
@@ -414,6 +416,8 @@ fn position_selected_choice(
     selected_choice.0.translation.y =
         (world_position.y - player_map.translation.y) / player_map.scale.y;
     selected_choice.1.latest_hovered_cell = None;
+    selected_choice.1.occupied_tiles = None;
+    selected_choice.2.color = Color::WHITE;
 }
 
 fn rotate_selected_choice(

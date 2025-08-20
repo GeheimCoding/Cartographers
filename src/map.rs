@@ -2,12 +2,15 @@ use crate::asset_manager::{PlayerMaps, TerrainImages};
 use crate::terrain::Terrain;
 use crate::{AppState, SelectedChoice, SnapSelectedChoiceToCell, WorldPosition};
 use bevy::prelude::*;
+use std::collections::HashSet;
 
 pub fn plugin(app: &mut App) {
     app.add_systems(OnEnter(AppState::InGame), setup)
         .add_systems(
             Update,
-            snap_selected_choice_to_cell.run_if(on_event::<SnapSelectedChoiceToCell>),
+            (snap_selected_choice_to_cell, highlight_selected_choice)
+                .chain()
+                .run_if(on_event::<SnapSelectedChoiceToCell>),
         );
 }
 
@@ -92,7 +95,6 @@ pub fn snap_selected_choice_to_cell(
         + (cell.index.1, cell.index.0).to_vec2() * grid.cell_size.inverse_y())
     .extend(selected_choice.0.translation.z);
 
-    info!("{:?}", rotation.to_degrees());
     let shifted_tiles = selected_choice
         .1
         .choice
@@ -115,10 +117,12 @@ pub fn snap_selected_choice_to_cell(
         })
         .collect::<Vec<_>>();
 
-    info!("reference_cell: {:?}", reference_cell);
-    info!("hovered cell: {:?}", cell);
-    info!("tiles: {:?}", selected_choice.1.choice.tiles);
-    info!("shifted_tiles: {:?}", shifted_tiles);
+    let occupied_tiles = shifted_tiles
+        .into_iter()
+        .map(|(row, column)| (-row + cell.index.0 as isize, column + cell.index.1 as isize))
+        .collect::<Vec<_>>();
+
+    selected_choice.1.occupied_tiles = Some(occupied_tiles);
 
     event_reader.clear();
 }
@@ -192,4 +196,37 @@ fn setup(
         }
     }
     commands.spawn(observer);
+}
+
+fn highlight_selected_choice(
+    selected_choice: Single<(&mut Sprite, &SelectedChoice)>,
+    cells: Query<&Cell>,
+    grid: Res<Grid>,
+) {
+    let (mut sprite, selected_choice) = selected_choice.into_inner();
+    sprite.color = Color::WHITE;
+    let Some(occupied_tiles) = selected_choice.occupied_tiles.as_ref() else {
+        return;
+    };
+
+    let outside_grid = occupied_tiles.iter().cloned().any(|(row, column)| {
+        row < 0
+            || column < 0
+            || row >= grid.dimension.0 as isize
+            || column >= grid.dimension.1 as isize
+    });
+
+    let placed_cells = cells
+        .iter()
+        .filter(|cell| cell.terrain != Terrain::None)
+        .map(|cell| (cell.index.0 as isize, cell.index.1 as isize))
+        .collect::<HashSet<_>>();
+
+    let colliding_with_cell = occupied_tiles
+        .iter()
+        .any(|tile| placed_cells.contains(tile));
+
+    if outside_grid || colliding_with_cell {
+        sprite.color = Color::srgba(1.0, 1.0, 1.0, 0.5);
+    }
 }
