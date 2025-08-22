@@ -10,7 +10,9 @@ mod terrain;
 use crate::asset_manager::{CardBacks, CardFronts, Choices};
 use crate::cards::DrawableCard;
 use crate::cards::{Card, Scoring};
-use crate::map::{Grid, PlayerMap, is_inside_grid, snap_selected_choice_to_cell};
+use crate::map::{
+    Grid, PlayerMap, SelectedChoicePlaced, is_inside_grid, snap_selected_choice_to_cell,
+};
 use crate::terrain::Choice;
 use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
 use bevy::input::common_conditions::input_just_pressed;
@@ -60,6 +62,7 @@ enum AppState {
 struct SelectedChoice {
     choice: Choice,
     rotation: f32,
+    valid_to_place: bool,
     occupied_tiles: Option<Vec<(isize, isize)>>,
     latest_hovered_cell: Option<Entity>,
 }
@@ -100,7 +103,9 @@ fn main() {
             Update,
             (
                 spawn_random_tasks.run_if(input_just_pressed(KeyCode::Enter)),
-                draw_card.run_if(input_just_pressed(KeyCode::Space)),
+                draw_card.run_if(
+                    input_just_pressed(KeyCode::Space).or(on_event::<SelectedChoicePlaced>),
+                ),
                 position_selected_choice
                     .after(interactions)
                     .after(snap_selected_choice_to_cell)
@@ -370,6 +375,7 @@ fn interactions(
                     SelectedChoice {
                         choice: choice.clone(),
                         rotation: 0.0,
+                        valid_to_place: false,
                         occupied_tiles: None,
                         latest_hovered_cell: None,
                     },
@@ -418,6 +424,7 @@ fn position_selected_choice(
     selected_choice.1.latest_hovered_cell = None;
     selected_choice.1.occupied_tiles = None;
     selected_choice.2.color = Color::WHITE;
+    selected_choice.1.valid_to_place = false;
 }
 
 fn rotate_selected_choice(

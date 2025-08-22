@@ -1,16 +1,21 @@
 use crate::asset_manager::{PlayerMaps, TerrainImages};
 use crate::terrain::Terrain;
 use crate::{AppState, SelectedChoice, SnapSelectedChoiceToCell, WorldPosition};
+use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(OnEnter(AppState::InGame), setup)
+    app.add_event::<SelectedChoicePlaced>()
+        .add_systems(OnEnter(AppState::InGame), setup)
         .add_systems(
             Update,
-            (snap_selected_choice_to_cell, highlight_selected_choice)
-                .chain()
-                .run_if(on_event::<SnapSelectedChoiceToCell>),
+            (
+                (snap_selected_choice_to_cell, highlight_selected_choice)
+                    .chain()
+                    .run_if(on_event::<SnapSelectedChoiceToCell>),
+                place_selected_choice.run_if(input_just_pressed(MouseButton::Left)),
+            ),
         );
 }
 
@@ -30,6 +35,9 @@ pub struct Cell {
     terrain: Terrain,
     index: (usize, usize),
 }
+
+#[derive(Event)]
+pub struct SelectedChoicePlaced;
 
 trait ToVec2 {
     fn to_vec2(&self) -> Vec2;
@@ -199,11 +207,11 @@ fn setup(
 }
 
 fn highlight_selected_choice(
-    selected_choice: Single<(&mut Sprite, &SelectedChoice)>,
+    selected_choice: Single<(&mut Sprite, &mut SelectedChoice)>,
     cells: Query<&Cell>,
     grid: Res<Grid>,
 ) {
-    let (mut sprite, selected_choice) = selected_choice.into_inner();
+    let (mut sprite, mut selected_choice) = selected_choice.into_inner();
     sprite.color = Color::WHITE;
     let Some(occupied_tiles) = selected_choice.occupied_tiles.as_ref() else {
         return;
@@ -228,5 +236,32 @@ fn highlight_selected_choice(
 
     if outside_grid || colliding_with_cell {
         sprite.color = Color::srgba(1.0, 1.0, 1.0, 0.5);
+        selected_choice.valid_to_place = false;
+    } else {
+        selected_choice.valid_to_place = true;
     }
+}
+
+fn place_selected_choice(
+    mut commands: Commands,
+    selected_choice: Single<&SelectedChoice>,
+    cells: Query<(&mut Cell, &mut Sprite)>,
+    terrain_images: Res<TerrainImages>,
+) {
+    let selected_choice = selected_choice.into_inner();
+    if !selected_choice.valid_to_place {
+        return;
+    }
+    let mut cells = cells
+        .into_iter()
+        .map(|cell| (cell.0.index, cell))
+        .collect::<HashMap<_, _>>();
+    for (row, column) in selected_choice.occupied_tiles.as_ref().expect("tiles") {
+        let cell = cells
+            .get_mut(&(*row as usize, *column as usize))
+            .expect("cell");
+        cell.0.terrain = selected_choice.choice.terrain.clone();
+        cell.1.image = terrain_images[&cell.0.terrain].clone();
+    }
+    commands.send_event(SelectedChoicePlaced);
 }
