@@ -78,7 +78,7 @@ pub fn snap_selected_choice_to_cell(
     grid: Res<Grid>,
     cells: Query<&Cell>,
     mut event_reader: EventReader<SnapSelectedChoiceToCell>,
-    mut selected_choice: Single<(&mut Transform, &mut SelectedChoice)>,
+    mut selected_choice: Single<(&mut Transform, &mut SelectedChoice, &Sprite)>,
 ) {
     let cell = event_reader.read().next().expect("cell");
     selected_choice.1.latest_hovered_cell = Some(cell.0);
@@ -93,7 +93,7 @@ pub fn snap_selected_choice_to_cell(
     let reference_cell = (((choice_size / grid.cell_size).yx() - Vec2::X) / 2.0).floor();
     let mut reference_cell_offset =
         (reference_cell - ((choice_size / grid.cell_size).yx() - Vec2::ONE) / 2.0) * grid.cell_size;
-    let reference_cell = (reference_cell.x as usize, reference_cell.y as usize);
+    let reference_cell = (reference_cell.x as isize, reference_cell.y as isize);
 
     if cos == 0.0 {
         reference_cell_offset = reference_cell_offset.yx();
@@ -103,25 +103,50 @@ pub fn snap_selected_choice_to_cell(
         + (cell.index.1, cell.index.0).to_vec2() * grid.cell_size.inverse_y())
     .extend(selected_choice.0.translation.z);
 
+    let (row_offset, column_offset) = (
+        if reference_cell_offset.x == 0.0 {
+            0
+        } else {
+            reference_cell_offset.x.signum() as isize
+        },
+        if reference_cell_offset.y == 0.0 {
+            0
+        } else {
+            reference_cell_offset.y.signum() as isize
+        },
+    );
+    let mag = row_offset.abs() + column_offset.abs();
+    let row_mag = if selected_choice.2.flip_x { mag } else { 0 };
+    let column_mag = if selected_choice.2.flip_y { mag } else { 0 };
+
     let shifted_tiles = selected_choice
         .1
         .choice
         .tiles
         .iter()
         .map(|(row, column)| {
-            let shifted = (
-                *row as isize - reference_cell.0 as isize,
-                *column as isize - reference_cell.1 as isize,
+            let mut shifted = (
+                *row as isize - reference_cell.0,
+                *column as isize - reference_cell.1,
             );
-            if rotation.to_degrees() == 90.0 {
-                (shifted.1, -shifted.0)
+            if selected_choice.2.flip_x {
+                shifted.1 *= -1;
+                shifted.1 -= column_offset;
+            }
+            if selected_choice.2.flip_y {
+                shifted.0 *= -1;
+                shifted.0 -= row_offset;
+            }
+            let shifted = if rotation.to_degrees() == 90.0 {
+                (shifted.1 - row_mag, -shifted.0 - column_mag)
             } else if rotation.to_degrees() == 180.0 {
                 (-shifted.0, -shifted.1)
             } else if rotation.to_degrees() == 270.0 {
-                (-shifted.1, shifted.0)
+                (-shifted.1 + row_mag, shifted.0 + column_mag)
             } else {
                 shifted
-            }
+            };
+            shifted
         })
         .collect::<Vec<_>>();
 

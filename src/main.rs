@@ -111,6 +111,7 @@ fn main() {
                     .after(snap_selected_choice_to_cell)
                     .run_if(not(is_inside_grid)),
                 rotate_selected_choice.before(snap_selected_choice_to_cell),
+                flip_selected_choice.before(snap_selected_choice_to_cell),
                 create_choices,
                 interactions,
             )
@@ -436,6 +437,28 @@ fn rotate_selected_choice(
         selected_choice.1.rotation =
             (selected_choice.1.rotation + 90.0 * event.y.signum() + 360.0) % 360.0;
         selected_choice.0.rotation = Quat::from_rotation_z(selected_choice.1.rotation.to_radians());
+        selected_choice
+            .1
+            .latest_hovered_cell
+            .map(|cell| commands.send_event(SnapSelectedChoiceToCell(cell)));
+    }
+}
+
+fn flip_selected_choice(
+    mut commands: Commands,
+    mut selected_choice: Single<(&mut Sprite, &mut SelectedChoice)>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    let mut flipped = false;
+    if keyboard.just_pressed(KeyCode::KeyH) {
+        selected_choice.0.flip_x = !selected_choice.0.flip_x;
+        flipped = true;
+    }
+    if keyboard.just_pressed(KeyCode::KeyV) {
+        selected_choice.0.flip_y = !selected_choice.0.flip_y;
+        flipped = true;
+    }
+    if flipped {
         selected_choice
             .1
             .latest_hovered_cell
