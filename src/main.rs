@@ -11,9 +11,9 @@ use crate::asset_manager::{CardBacks, CardFronts, Choices};
 use crate::cards::DrawableCard;
 use crate::cards::{Card, Scoring};
 use crate::map::{
-    Grid, PlayerMap, SelectedChoicePlaced, is_inside_grid, snap_selected_choice_to_cell,
+    Cell, Grid, PlayerMap, SelectedChoicePlaced, is_inside_grid, snap_selected_choice_to_cell,
 };
-use crate::terrain::Choice;
+use crate::terrain::{Choice, Terrain};
 use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::input::mouse::MouseWheel;
@@ -301,6 +301,7 @@ fn create_choices(
     choice_ui: Option<Single<Entity, With<ChoiceUI>>>,
     selected_choice: Option<Single<Entity, With<SelectedChoice>>>,
     grid: Res<Grid>,
+    cells: Query<&Cell>,
 ) {
     if !drawn_card.is_changed() {
         return;
@@ -313,6 +314,7 @@ fn create_choices(
     if choices.is_empty() {
         return;
     }
+    let cells = cells.iter().collect::<Vec<_>>();
 
     commands
         .spawn((
@@ -329,6 +331,7 @@ fn create_choices(
         ))
         .with_children(|parent| {
             choices.iter().for_each(|choice| {
+                does_choice_fit_on_grid(cells.clone(), choice, &grid);
                 let size = choice.size(grid.cell_size);
                 parent.spawn((
                     Node {
@@ -464,4 +467,59 @@ fn flip_selected_choice(
             .latest_hovered_cell
             .map(|cell| commands.send_event(SnapSelectedChoiceToCell(cell)));
     }
+}
+
+fn does_choice_fit_on_grid(cells: Vec<&Cell>, choice: &Choice, grid: &Grid) -> bool {
+    let empty_cells = cells
+        .iter()
+        .filter(|cell| cell.terrain == Terrain::None)
+        .map(|cell| cell.index)
+        .collect::<Vec<_>>();
+    let width = grid.dimension.0 - 1;
+    let height = grid.dimension.1 - 1;
+    // same as rotating normal all 4 directions and any flipped version all 4 directions
+    let mut configurations = vec![
+        empty_cells.clone(),
+        empty_cells.iter().map(|(x, y)| (width - *x, *y)).collect(),
+        empty_cells.iter().map(|(x, y)| (*x, height - *y)).collect(),
+        rotate_grid(&empty_cells, (width, height), 180),
+        rotate_grid(&empty_cells, (width, height), 270),
+    ];
+    configurations.extend(
+        (0..3)
+            .map(|i| rotate_grid(&configurations[i], (width, height), 90))
+            .collect::<Vec<_>>(),
+    );
+    if empty_cells.len() < 10 {
+        info!("{:?}", configurations);
+    }
+
+    let tiles = &choice.tiles;
+    // TODO: check for each tile starting at an empty cell until one is found
+    // TODO: speed up with rayon?
+    false
+}
+
+fn rotate_grid(
+    cells: &Vec<(usize, usize)>,
+    (width, height): (usize, usize),
+    rotation: usize,
+) -> Vec<(usize, usize)> {
+    let mut rotated_cells = Vec::with_capacity(cells.len());
+    if rotation == 90 {
+        for (x, y) in cells {
+            rotated_cells.push((*y, height - *x));
+        }
+    } else if rotation == 180 {
+        for (x, y) in cells {
+            rotated_cells.push((width - *x, height - *y));
+        }
+    } else if rotation == 270 {
+        for (x, y) in cells {
+            rotated_cells.push((width - *y, *x));
+        }
+    } else {
+        unimplemented!();
+    }
+    rotated_cells
 }

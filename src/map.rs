@@ -25,15 +25,15 @@ pub struct PlayerMap;
 #[derive(Clone, Debug, Resource)]
 pub struct Grid {
     pub cell_size: Vec2,
-    dimension: (usize, usize),
+    pub dimension: (usize, usize),
     top_left_cell_offset: Vec2,
     scale: f32,
 }
 
 #[derive(Clone, Component, Debug)]
 pub struct Cell {
-    terrain: Terrain,
-    index: (usize, usize),
+    pub terrain: Terrain,
+    pub index: (usize, usize),
 }
 
 #[derive(Event)]
