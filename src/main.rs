@@ -22,6 +22,7 @@ use bevy::window::PrimaryWindow;
 use bevy_framepace::FramepacePlugin;
 use rand::rng;
 use rand::seq::SliceRandom;
+use std::collections::HashSet;
 
 #[derive(Clone, Debug, Default, Deref, Resource)]
 struct WorldPosition(Vec2);
@@ -331,7 +332,7 @@ fn create_choices(
         ))
         .with_children(|parent| {
             choices.iter().for_each(|choice| {
-                does_choice_fit_on_grid(cells.clone(), choice, &grid);
+                dbg!(does_choice_fit_on_grid(cells.clone(), choice, &grid));
                 let size = choice.size(grid.cell_size);
                 parent.spawn((
                     Node {
@@ -478,6 +479,7 @@ fn does_choice_fit_on_grid(cells: Vec<&Cell>, choice: &Choice, grid: &Grid) -> b
     let width = grid.dimension.0 - 1;
     let height = grid.dimension.1 - 1;
     // same as rotating normal all 4 directions and any flipped version all 4 directions
+    // TODO: calculate 8 orientations of tile instead (as a set to make it potentially less)
     let mut configurations = vec![
         empty_cells.clone(),
         empty_cells.iter().map(|(x, y)| (width - *x, *y)).collect(),
@@ -490,13 +492,33 @@ fn does_choice_fit_on_grid(cells: Vec<&Cell>, choice: &Choice, grid: &Grid) -> b
             .map(|i| rotate_grid(&configurations[i], (width, height), 90))
             .collect::<Vec<_>>(),
     );
-    if empty_cells.len() < 10 {
-        info!("{:?}", configurations);
-    }
 
     let tiles = &choice.tiles;
-    // TODO: check for each tile starting at an empty cell until one is found
-    // TODO: speed up with rayon?
+    let reference = (tiles[0].0 as isize, tiles[0].1 as isize);
+    for configuration in configurations.iter() {
+        let empty_cells = configuration.iter().collect::<HashSet<_>>();
+        'outer: for empty_cell in configuration {
+            let empty_cell = (empty_cell.0 as isize, empty_cell.1 as isize);
+            for (row, column) in tiles {
+                let (projected_row, projected_column) =
+                    (reference.0 - *row as isize, reference.1 - *column as isize);
+                let projected_cell = (
+                    projected_row + empty_cell.0,
+                    projected_column + empty_cell.1,
+                );
+                if projected_cell.0 < 0
+                    || projected_cell.0 >= grid.dimension.0 as isize
+                    || projected_cell.1 < 0
+                    || projected_cell.1 >= grid.dimension.1 as isize
+                    || !empty_cells
+                        .contains(&(projected_cell.0 as usize, projected_cell.1 as usize))
+                {
+                    continue 'outer;
+                }
+            }
+            return true;
+        }
+    }
     false
 }
 
