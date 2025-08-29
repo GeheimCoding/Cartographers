@@ -14,7 +14,9 @@ use crate::map::{
     Cell, Grid, PlayerMap, SelectedChoicePlaced, is_inside_grid, snap_selected_choice_to_cell,
 };
 use crate::terrain::{Choice, Terrain};
+use bevy::ecs::component::HookContext;
 use bevy::ecs::relationship::OrderedRelationshipSourceCollection;
+use bevy::ecs::world::DeferredWorld;
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
@@ -50,6 +52,10 @@ struct Scroll;
 
 #[derive(Component)]
 struct ChoiceUI;
+
+#[derive(Component)]
+#[component(on_add = mark_disabled_choices)]
+struct DisabledChoice;
 
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq, States)]
 enum AppState {
@@ -331,10 +337,10 @@ fn create_choices(
             BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.1)),
         ))
         .with_children(|parent| {
+            let mut only_disabled_choices = true;
             choices.iter().for_each(|choice| {
-                dbg!(does_choice_fit_on_grid(cells.clone(), choice, &grid));
                 let size = choice.size(grid.cell_size);
-                parent.spawn((
+                let mut entity = parent.spawn((
                     Node {
                         border: UiRect::all(Val::Px(8.0)),
                         align_items: AlignItems::Center,
@@ -357,7 +363,15 @@ fn create_choices(
                         }
                     )],
                 ));
+                if does_choice_fit_on_grid(cells.clone(), choice, &grid) {
+                    only_disabled_choices = false;
+                } else {
+                    entity.insert(DisabledChoice);
+                }
             });
+            if only_disabled_choices {
+                info!("TODO: spawn alternatives");
+            }
         });
 }
 
@@ -365,14 +379,22 @@ fn create_choices(
 fn interactions(
     mut commands: Commands,
     mut interaction_query: Query<
-        (&Interaction, &Choice, &mut BorderColor),
+        (
+            &Interaction,
+            &Choice,
+            &mut BorderColor,
+            Option<&DisabledChoice>,
+        ),
         (Changed<Interaction>, With<Button>),
     >,
     choice_ui: Single<Entity, With<ChoiceUI>>,
     player_map: Single<Entity, With<PlayerMap>>,
     grid: Res<Grid>,
 ) {
-    for (interaction, choice, mut color) in &mut interaction_query {
+    for (interaction, choice, mut color, disabled) in &mut interaction_query {
+        if disabled.is_some() {
+            continue;
+        }
         match interaction {
             Interaction::Pressed => {
                 commands.entity(*choice_ui).despawn();
@@ -544,4 +566,11 @@ fn rotate_grid(
         unimplemented!();
     }
     rotated_cells
+}
+
+fn mark_disabled_choices(mut world: DeferredWorld, context: HookContext) {
+    world
+        .commands()
+        .entity(context.entity)
+        .insert((BackgroundColor(Color::BLACK), BorderColor(Color::BLACK)));
 }
